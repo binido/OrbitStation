@@ -2,6 +2,7 @@
 mod i18n;
 mod device;
 mod proto;
+mod theme;
 
 use device::{Device, Profile};
 use eframe::egui::{self, Color32, Pos2, Stroke, Vec2};
@@ -85,6 +86,7 @@ struct App {
     dev: Option<Device>,
     /// The zoom last saved, Ctrl +/- change it too.
     zoom: f32,
+    colors: theme::Colors,
     error: String,
     last_poll: Instant,
     info: Option<DeviceInfo>,
@@ -111,6 +113,7 @@ impl App {
         ctx.set_zoom_factor(zoom);
         let mut app = App {
             zoom,
+            colors: theme::apply(ctx),
             dev: None,
             error: String::new(),
             last_poll: Instant::now(),
@@ -281,8 +284,9 @@ impl App {
             for (i, name) in proto::BUTTONS.iter().enumerate().filter(|(_, n)| !n.is_empty()) {
                 let on = input.buttons & 1 << i != 0;
                 let text = egui::RichText::new(*name).monospace();
-                ui.add(egui::Button::new(if on { text.color(Color32::BLACK) } else { text })
-                    .fill(if on { Color32::from_rgb(120, 200, 120) } else { ui.visuals().faint_bg_color })
+                let sel = ui.visuals().selection;
+                ui.add(egui::Button::new(if on { text.color(sel.stroke.color) } else { text })
+                    .fill(if on { sel.bg_fill } else { ui.visuals().widgets.inactive.bg_fill })
                     .min_size(Vec2::new(48.0, 28.0)));
             }
         });
@@ -507,13 +511,15 @@ impl App {
     }
 }
 
-fn config_path(name: &str) -> PathBuf {
+fn config_home() -> PathBuf {
     std::env::var_os("XDG_CONFIG_HOME")
         .map(PathBuf::from)
         .or_else(|| std::env::var_os("HOME").map(|h| PathBuf::from(h).join(".config")))
         .unwrap_or_else(|| PathBuf::from("."))
-        .join("orbitstation")
-        .join(name)
+}
+
+fn config_path(name: &str) -> PathBuf {
+    config_home().join("orbitstation").join(name)
 }
 
 /// One small file per setting in ~/.config/orbitstation.
@@ -784,7 +790,7 @@ fn curve_plot(ui: &mut egui::Ui, bank: &[u8; 9]) {
     let at = |x: f32, y: f32| Pos2::new(rect.left() + x * rect.width(), rect.bottom() - y.clamp(0.0, 1.0) * rect.height());
     p.line_segment([at(0.0, 0.0), at(1.0, 1.0)], Stroke::new(1.0, ui.visuals().weak_text_color()));
     let pts: Vec<Pos2> = bank.iter().enumerate().map(|(i, v)| at(i as f32 / 8.0, (*v as f32 - 50.0) / 100.0)).collect();
-    p.add(egui::Shape::line(pts, Stroke::new(2.0, Color32::from_rgb(120, 200, 120))));
+    p.add(egui::Shape::line(pts, Stroke::new(2.0, ui.visuals().selection.bg_fill)));
 }
 
 fn keys_grid(ui: &mut egui::Ui, m: &mut Mapping) {
@@ -883,7 +889,7 @@ fn stick(ui: &mut egui::Ui, title: &str, x: i16, y: i16, pressed: bool) {
         let r = rect.width() / 2.0 - 4.0;
         p.circle_stroke(rect.center(), r, Stroke::new(1.5, ui.visuals().weak_text_color()));
         let dot = rect.center() + Vec2::new(x as f32, -(y as f32)) / 32768.0 * r;
-        let color = if pressed { Color32::from_rgb(120, 200, 120) } else { ui.visuals().strong_text_color() };
+        let color = if pressed { ui.visuals().selection.bg_fill } else { ui.visuals().strong_text_color() };
         p.circle_filled(Pos2::new(dot.x, dot.y), 7.0, color);
         ui.monospace(format!("{x:>6} {y:>6}"));
     });
@@ -928,7 +934,9 @@ impl eframe::App for App {
             self.set_test_mode(self.tab == Tab::Test);
         }
 
-        egui::Panel::left("nav").resizable(false).exact_size(170.0).show(ui, |ui| {
+        let sidebar = self.colors.get(ui.visuals().dark_mode).sidebar_bg;
+        let nav = egui::Frame::side_top_panel(ui.style()).fill(sidebar);
+        egui::Panel::left("nav").resizable(false).exact_size(170.0).frame(nav).show(ui, |ui| {
             ui.add_space(8.0);
             ui.heading("OrbitStation");
             ui.add_space(8.0);
