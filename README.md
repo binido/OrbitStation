@@ -27,16 +27,20 @@ Saved profiles go to `~/.local/share/orbitstation/profiles`. "Reset all profiles
 command and wipes all four slots, so the app backs them all up first. The protocol is in [docs/protocol.md](docs/protocol.md). Thanks to
 [openflydigi](https://github.com/mkaliaha/openflydigi) for the profile blob research.
 
-## Build and run
+## Install
+
+Works on any distribution. Needs Rust 1.95 or newer ([rustup](https://rustup.rs)), a C compiler and git.
 
 ```bash
-cargo run --release
+curl -fsSL https://raw.githubusercontent.com/binido/OrbitStation/main/install.sh | sh
 ```
 
-## Permissions
-
-The app talks to `/dev/hidraw*`. If it reports no access, install the udev rule and replug the gamepad:
+The program goes to `~/.local/bin/orbitstation` with a menu entry, no root needed. Only the udev rule
+that lets your user open the gamepad asks for a password; skip it with `sh -s -- --no-udev`.
+Run the same command again to update. To remove:
 
 ```bash
-sudo cp 70-orbitstation.rules /etc/udev/rules.d/ && sudo udevadm control --reload
+curl -fsSL https://raw.githubusercontent.com/binido/OrbitStation/main/install.sh | sh -s -- --uninstall
 ```
+
+From a checkout, `sh install.sh` builds that checkout instead of downloading.
