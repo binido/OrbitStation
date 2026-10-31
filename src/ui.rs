@@ -1,6 +1,6 @@
 //! Building blocks of the window: Phosphor icons, page headers, cards and sidebar entries.
 
-use eframe::egui::{self, RichText, Vec2};
+use eframe::egui::{self, Align, CursorIcon, Layout, PointerButton, ResizeDirection, RichText, Vec2, ViewportCommand};
 
 /// Phosphor Regular codepoints, the glyphs kept in assets/fonts/Phosphor-Regular-subset.ttf.
 pub mod icon {
@@ -36,6 +36,9 @@ pub mod icon {
     pub const PLUGS: &str = "\u{eb5a}";
     pub const CURSOR: &str = "\u{e7c8}";
     pub const BATTERY: &str = "\u{e0c2}";
+    pub const MINUS: &str = "\u{e32a}";
+    pub const SQUARE: &str = "\u{e45e}";
+    pub const RESTORE: &str = "\u{e1ca}";
 }
 
 pub const FONT: &[u8] = include_bytes!("../assets/fonts/Phosphor-Regular-subset.ttf");
@@ -45,11 +48,89 @@ pub fn label(icon: &str, text: &str) -> String {
     format!("{icon}  {text}")
 }
 
-/// Big title on top of a page.
-pub fn page_title(ui: &mut egui::Ui, icon: &str, title: &str) {
-    ui.add_space(4.0);
-    ui.label(RichText::new(label(icon, title)).size(24.0).strong());
-    ui.add_space(12.0);
+fn maximized(ctx: &egui::Context) -> bool {
+    ctx.input(|i| i.viewport().maximized.unwrap_or(false))
+}
+
+/// Moves the window on a drag and maximizes it on a double click, like a desktop's own title bar.
+pub fn drag_window(ctx: &egui::Context, r: &egui::Response) {
+    if r.drag_started_by(PointerButton::Primary) {
+        ctx.send_viewport_cmd(ViewportCommand::StartDrag);
+    }
+    if r.double_clicked() {
+        ctx.send_viewport_cmd(ViewportCommand::Maximized(!maximized(ctx)));
+    }
+}
+
+/// The window has no system decorations: this bar carries the page title and the window buttons.
+pub fn title_bar(ui: &mut egui::Ui, icon: &str, title: &str) {
+    let bar = ui.interact(ui.max_rect(), ui.scope_id().with("drag"), egui::Sense::click_and_drag());
+    drag_window(ui.ctx(), &bar);
+    ui.horizontal_centered(|ui| {
+        ui.label(RichText::new(label(icon, title)).size(19.0).strong());
+        ui.with_layout(Layout::right_to_left(Align::Center), |ui| {
+            ui.spacing_mut().item_spacing.x = 4.0;
+            let ctx = ui.ctx().clone();
+            if window_button(ui, icon::X, true).clicked() {
+                ctx.send_viewport_cmd(ViewportCommand::Close);
+            }
+            let max = maximized(&ctx);
+            if window_button(ui, if max { icon::RESTORE } else { icon::SQUARE }, false).clicked() {
+                ctx.send_viewport_cmd(ViewportCommand::Maximized(!max));
+            }
+            if window_button(ui, icon::MINUS, false).clicked() {
+                ctx.send_viewport_cmd(ViewportCommand::Minimized(true));
+            }
+        });
+    });
+}
+
+/// Round frameless button; the close one turns red under the pointer.
+fn window_button(ui: &mut egui::Ui, icon: &str, close: bool) -> egui::Response {
+    ui.scope(|ui| {
+        if close {
+            let red = ui.visuals().error_fg_color;
+            let w = &mut ui.visuals_mut().widgets;
+            (w.hovered.weak_bg_fill, w.active.weak_bg_fill) = (red.gamma_multiply(0.35), red.gamma_multiply(0.55));
+        }
+        let button = egui::Button::new(RichText::new(icon).size(15.0)).frame_when_inactive(false).corner_radius(15);
+        ui.add(button.min_size(Vec2::new(32.0, 30.0)))
+    })
+    .inner
+}
+
+/// Without decorations the compositor gives no resize border, so the window's own edges start one.
+pub fn resize_edges(ctx: &egui::Context) {
+    const EDGE: f32 = 6.0;
+    let full = ctx.input(|i| i.viewport().fullscreen.unwrap_or(false));
+    let Some(pos) = ctx.input(|i| i.pointer.hover_pos()) else { return };
+    if full || maximized(ctx) {
+        return;
+    }
+    let r = ctx.content_rect();
+    let (n, s) = (pos.y - r.top() < EDGE, r.bottom() - pos.y < EDGE);
+    let (w, e) = (pos.x - r.left() < EDGE, r.right() - pos.x < EDGE);
+    use ResizeDirection::*;
+    let dir = match (n, s, w, e) {
+        (true, _, true, _) => NorthWest,
+        (true, _, _, true) => NorthEast,
+        (_, true, true, _) => SouthWest,
+        (_, true, _, true) => SouthEast,
+        (true, ..) => North,
+        (_, true, ..) => South,
+        (_, _, true, _) => West,
+        (_, _, _, true) => East,
+        _ => return,
+    };
+    ctx.set_cursor_icon(match dir {
+        North | South => CursorIcon::ResizeVertical,
+        East | West => CursorIcon::ResizeHorizontal,
+        NorthWest | SouthEast => CursorIcon::ResizeNwSe,
+        NorthEast | SouthWest => CursorIcon::ResizeNeSw,
+    });
+    if ctx.input(|i| i.pointer.primary_pressed()) {
+        ctx.send_viewport_cmd(ViewportCommand::BeginResize(dir));
+    }
 }
 
 /// A block of related settings on its own background, the way GNOME groups preferences.

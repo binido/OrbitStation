@@ -1070,9 +1070,12 @@ impl eframe::App for App {
         }
 
         let sidebar = self.colors.get(ui.visuals().dark_mode).sidebar_bg;
-        let nav = egui::Frame::side_top_panel(ui.style()).fill(sidebar).inner_margin(egui::Margin::symmetric(12, 16));
+        let nav = egui::Frame::side_top_panel(ui.style()).fill(sidebar).inner_margin(egui::Margin { left: 12, right: 12, top: 6, bottom: 16 });
         egui::Panel::left("nav").resizable(false).exact_size(230.0).frame(nav).show(ui, |ui| {
-            ui.label(RichText::new("OrbitStation").size(21.0).strong());
+            let (rect, head) = ui.allocate_exact_size(Vec2::new(ui.available_width(), 34.0), egui::Sense::click_and_drag());
+            let font = egui::FontId::proportional(21.0);
+            ui.painter().text(rect.left_center(), egui::Align2::LEFT_CENTER, "OrbitStation", font, ui.visuals().strong_text_color());
+            ui::drag_window(ui.ctx(), &head);
             let sections: [(&str, &[Tab]); 3] = [
                 (t!("Gamepad"), &[Tab::Device, Tab::Test]),
                 (t!("Profile"), &[Tab::Remap, Tab::Sticks, Tab::Gyro, Tab::Vibration, Tab::Lighting]),
@@ -1088,6 +1091,13 @@ impl eframe::App for App {
                 }
             }
         });
+        let (page_icon, page) = if self.dev.is_none() && self.tab != Tab::Settings {
+            (icon::PLUGS, t!("Waiting for the gamepad…"))
+        } else {
+            (self.tab.icon(), self.tab.name())
+        };
+        let bar = egui::Frame::side_top_panel(ui.style()).inner_margin(egui::Margin { left: 24, right: 8, top: 4, bottom: 4 });
+        egui::Panel::top("titlebar").exact_size(46.0).frame(bar).show_separator_line(false).show(ui, |ui| ui::title_bar(ui, page_icon, page));
         let status = if self.dev.is_some() { &self.note } else { &self.error };
         let bar = egui::Frame::side_top_panel(ui.style()).inner_margin(egui::Margin::symmetric(16, 6));
         egui::Panel::bottom("status").frame(bar).show(ui, |ui| {
@@ -1097,15 +1107,13 @@ impl eframe::App for App {
             let bar = egui::Frame::side_top_panel(ui.style()).inner_margin(egui::Margin::symmetric(16, 8));
             egui::Panel::bottom("actions").frame(bar).show(ui, |ui| self.profile_actions(ui));
         }
-        let page = egui::Frame::central_panel(ui.style()).inner_margin(egui::Margin::symmetric(24, 16));
+        let page = egui::Frame::central_panel(ui.style()).inner_margin(egui::Margin { left: 24, right: 24, top: 4, bottom: 16 });
         egui::CentralPanel::default().frame(page).show(ui, |ui| {
             if self.dev.is_none() && self.tab != Tab::Settings {
-                ui::page_title(ui, icon::PLUGS, t!("Waiting for the gamepad…"));
                 ui::card(ui, icon::INFO, t!("Gamepad"), |ui| ui.label(&self.error));
                 return;
             }
             egui::ScrollArea::vertical().auto_shrink(false).show(ui, |ui| {
-                ui::page_title(ui, self.tab.icon(), self.tab.name());
                 match self.tab {
                     Tab::Device => self.device_tab(ui),
                     Tab::Test => self.test_tab(ui),
@@ -1118,6 +1126,7 @@ impl eframe::App for App {
                 }
             });
         });
+        ui::resize_edges(ui.ctx());
     }
 
     fn on_exit(&mut self) {
@@ -1135,6 +1144,8 @@ fn main() -> eframe::Result {
             .with_inner_size([1000.0, 720.0])
             .with_min_inner_size([760.0, 520.0])
             .with_title("OrbitStation")
+            // the app draws its own title bar, see ui::title_bar
+            .with_decorations(false)
             // Matches orbitstation.desktop, so docks and task bars pick up the installed icon.
             .with_app_id("orbitstation")
             .with_icon(eframe::icon_data::from_png_bytes(include_bytes!("../assets/icons/orbitstation-128.png")).unwrap_or_default()),
