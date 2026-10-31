@@ -23,6 +23,9 @@ pub mod cmd {
     pub const MACRO_READ: u8 = 0xac;
     pub const MACRO_WRITE_START: u8 = 0xad;
     pub const MACRO_WRITE_PACK: u8 = 0xae;
+    pub const RGB_READ: u8 = 0xa7;
+    pub const RGB_WRITE_START: u8 = 0xa8;
+    pub const RGB_WRITE_PACK: u8 = 0xa9;
     pub const EXT_INPUT: u8 = 0xef;
 }
 
@@ -289,6 +292,102 @@ pub mod vibration {
             blob[g + 3] = v.trig_threshold;
             blob[g + 5] = v.trig_strength;
         }
+    }
+}
+
+/// Lighting blob, one per profile. Vader 5 Pro: 320 bytes, a 20-byte header and 10 frames of 10 LEDs.
+/// Header: version u16, click feedback, loop start, loop end, cycle time (bigger is slower),
+/// brightness, LED count, effect id, grip sync. The pad has no effect generator, it plays the frames,
+/// so an effect is written as frames. Byte 2 freezes the shown frame and is never touched here.
+pub mod rgb {
+    const LOOP_START: usize = 3;
+    const LOOP_END: usize = 4;
+    pub const PERIOD: usize = 5;
+    pub const BRIGHTNESS: usize = 6;
+    const LEDS: usize = 7;
+    pub const MODE: usize = 8;
+    pub const GRIP_SYNC: usize = 9;
+    const FRAMES: usize = 20;
+
+    /// Space Station's effect ids; the id only records which generator produced the frames.
+    pub const EFFECTS: [(u8, &str); 8] = [
+        (0, "Выключено"),
+        (4, "Один цвет"),
+        (5, "Несколько цветов"),
+        (3, "Дыхание"),
+        (1, "Поток"),
+        (6, "Радуга"),
+        (7, "Волна"),
+        (8, "Вспышки"),
+    ];
+    pub const MAX_COLORS: usize = 5;
+    pub type Rgb = [u8; 3];
+
+    pub fn leds(blob: &[u8]) -> usize {
+        (blob[LEDS] as usize).clamp(1, 32)
+    }
+
+    pub fn frames(blob: &[u8]) -> usize {
+        blob.len().saturating_sub(FRAMES) / (3 * leds(blob))
+    }
+
+    pub fn led(blob: &[u8], frame: usize, led: usize) -> Rgb {
+        let i = FRAMES + (frame * leds(blob) + led) * 3;
+        [blob[i], blob[i + 1], blob[i + 2]]
+    }
+
+    fn blend(a: Rgb, b: Rgb, t: f32) -> Rgb {
+        std::array::from_fn(|i| (a[i] as f32 + (b[i] as f32 - a[i] as f32) * t) as u8)
+    }
+
+    /// Colour at `pos` 0..1 around the cyclic list, blended between stops.
+    fn sample(colors: &[Rgb], pos: f32) -> Rgb {
+        let x = pos.rem_euclid(1.0) * colors.len() as f32;
+        let i = x as usize % colors.len();
+        blend(colors[i], colors[(i + 1) % colors.len()], x.fract())
+    }
+
+    fn scale(c: Rgb, level: f32) -> Rgb {
+        c.map(|v| (v as f32 * level) as u8)
+    }
+
+    fn hue(pos: f32) -> Rgb {
+        let sector = pos * 6.0;
+        let rise = (255.0 * sector.fract()) as u8;
+        let fall = 255 - rise;
+        [[255, rise, 0], [fall, 255, 0], [0, 255, rise], [0, fall, 255], [rise, 0, 255], [255, 0, fall]][sector as usize % 6]
+    }
+
+    /// Rewrites every frame for `effect` and loops over all of them.
+    pub fn apply(blob: &mut [u8], effect: u8, colors: &[Rgb]) {
+        let (n_leds, n_frames) = (leds(blob), frames(blob));
+        let rainbow: Vec<Rgb> = (0..6).map(|i| hue(i as f32 / 6.0)).collect();
+        let colors = match (effect, colors.is_empty()) {
+            (6, _) => &rainbow[..],
+            (_, true) => &[[0, 116, 255]][..],
+            _ => colors,
+        };
+        for f in 0..n_frames {
+            let ft = f as f32 / n_frames as f32;
+            for l in 0..n_leds {
+                let lt = l as f32 / n_leds as f32;
+                let c = match effect {
+                    0 => [0, 0, 0],
+                    4 => colors[0],
+                    5 => sample(colors, lt),
+                    // a triangle ramp so the loop joins back to itself
+                    3 => scale(colors[(ft * colors.len() as f32) as usize % colors.len()], 1.0 - (2.0 * ft - 1.0).abs()),
+                    1 | 6 => sample(colors, lt + ft),
+                    7 => scale(sample(colors, lt), 1.0 - (2.0 * (lt + ft).fract() - 1.0).abs()),
+                    _ => if f % 2 == 0 { colors[f / 2 % colors.len()] } else { [0, 0, 0] },
+                };
+                let i = FRAMES + (f * n_leds + l) * 3;
+                blob[i..i + 3].copy_from_slice(&c);
+            }
+        }
+        blob[MODE] = effect;
+        blob[LOOP_START] = 0;
+        blob[LOOP_END] = n_frames.saturating_sub(1) as u8;
     }
 }
 
@@ -706,6 +805,23 @@ mod tests {
         assert_eq!((blob[145], blob[149], blob[153], blob[154]), (0, 80, 80, 0xff));
         assert_eq!((blob[156], blob[157], blob[170], blob[171]), (0, 255, 10, 20));
         assert_eq!(blob[162..169], before[162..169]);
+    }
+
+    #[test]
+    fn lighting_frames() {
+        // header read from a Vader 5 Pro: loop 0..9, period 4, brightness 20, 10 LEDs, wave
+        let mut blob = vec![0u8; 320];
+        blob[..10].copy_from_slice(&[0, 3, 0, 0, 9, 4, 20, 10, 7, 0]);
+        assert_eq!((rgb::leds(&blob), rgb::frames(&blob)), (10, 10));
+        rgb::apply(&mut blob, 4, &[[255, 0, 0]]);
+        assert!((0..10).all(|f| (0..10).all(|l| rgb::led(&blob, f, l) == [255, 0, 0])));
+        assert_eq!(blob[..10], [0, 3, 0, 0, 9, 4, 20, 10, 4, 0]);
+        rgb::apply(&mut blob, 1, &[[255, 0, 0], [0, 0, 255]]);
+        assert_eq!(rgb::led(&blob, 0, 0), [255, 0, 0]);
+        assert_eq!(rgb::led(&blob, 0, 5), [0, 0, 255]);
+        assert_eq!(rgb::led(&blob, 5, 0), [0, 0, 255]); // the pattern travels by frame
+        rgb::apply(&mut blob, 0, &[]);
+        assert!(blob[20..].iter().all(|b| *b == 0) && blob[8] == 0 && blob[2] == 0);
     }
 
     #[test]

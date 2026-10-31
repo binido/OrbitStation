@@ -4,7 +4,7 @@ mod proto;
 use device::{Device, Profile};
 use eframe::egui::{self, Color32, Pos2, Stroke, Vec2};
 use proto::macros::{self, Macro, Step};
-use proto::{DeviceInfo, HwStatus, Toggle, cmd, gyro, map, stick, trigger, vibration};
+use proto::{DeviceInfo, HwStatus, Toggle, cmd, gyro, map, rgb, stick, trigger, vibration};
 use std::path::PathBuf;
 use std::time::{Duration, Instant, SystemTime, UNIX_EPOCH};
 
@@ -16,6 +16,7 @@ enum Tab {
     Sticks,
     Gyro,
     Vibration,
+    Lighting,
     Settings,
 }
 
@@ -25,11 +26,21 @@ struct Mapping {
     device: Profile,
     map: Vec<u8>,
     macros: Vec<Macro>,
+    rgb: Vec<u8>,
+    /// Colours the lighting effect is generated from; the pad stores only frames.
+    colors: Vec<rgb::Rgb>,
 }
 
 impl Mapping {
     fn new(cfg: u8, device: Profile) -> Mapping {
-        Mapping { cfg, map: device.map.clone(), macros: macros::parse(&device.macros), device }
+        Mapping {
+            cfg,
+            map: device.map.clone(),
+            macros: macros::parse(&device.macros),
+            rgb: device.rgb.clone(),
+            colors: vec![[0, 116, 255]],
+            device,
+        }
     }
 
     /// The profile to write: keys with a macro point at the macro store, keys that lost one are reset,
@@ -47,7 +58,7 @@ impl Mapping {
                 map::set_key(&mut map, id, map::Key { target: map::IDENTITY, turbo: 0, hz: 0 });
             }
         }
-        Ok(Profile { map, macros: macros::encode(&self.device.macros, &self.macros)? })
+        Ok(Profile { map, macros: macros::encode(&self.device.macros, &self.macros)?, rgb: self.rgb.clone() })
     }
 }
 
@@ -230,7 +241,10 @@ impl App {
                 return;
             }
         };
-        map::set_version(&mut new.map, new_version(&m.device.map));
+        // Lighting has no tag of its own, a lighting-only save keeps the profile's tag.
+        if new.map != m.device.map || new.macros != m.device.macros {
+            map::set_version(&mut new.map, new_version(&m.device.map));
+        }
         let backup = backup_profile(m.cfg, &m.device);
         self.note = match dev.write_profile(m.cfg, &m.device, &new) {
             Err(e) => format!("Запись не удалась: {e}"),
@@ -495,6 +509,54 @@ fn vibration_editor(ui: &mut egui::Ui, m: &mut Mapping) {
     ui.label("Проверить вибрацию можно ползунками на вкладке «Тест кнопок» после записи.");
 }
 
+fn lighting_editor(ui: &mut egui::Ui, m: &mut Mapping) {
+    let mut effect = m.rgb[rgb::MODE];
+    let old_colors = m.colors.clone();
+    ui.horizontal(|ui| {
+        ui.label("Эффект");
+        pick(ui, "effect", &mut effect, &rgb::EFFECTS, 170.0);
+    });
+    if ![0, 6].contains(&effect) {
+        ui.horizontal(|ui| {
+            ui.label("Цвета");
+            let (mut drop, many) = (None, m.colors.len() > 1);
+            for (i, c) in m.colors.iter_mut().enumerate() {
+                ui.color_edit_button_srgb(c);
+                if many && ui.small_button("✕").clicked() {
+                    drop = Some(i);
+                }
+            }
+            if let Some(i) = drop {
+                m.colors.remove(i);
+            }
+            if m.colors.len() < rgb::MAX_COLORS && ui.button("+ цвет").clicked() {
+                m.colors.push([255, 255, 255]);
+            }
+        });
+    }
+    if effect != m.rgb[rgb::MODE] || m.colors != old_colors {
+        rgb::apply(&mut m.rgb, effect, &m.colors);
+    }
+    ui.add(egui::Slider::new(&mut m.rgb[rgb::BRIGHTNESS], 0..=100).text("яркость, %"));
+    ui.add(egui::Slider::new(&mut m.rgb[rgb::PERIOD], 1..=30).text("время цикла (больше = медленнее)"));
+    let mut sync = m.rgb[rgb::GRIP_SYNC] != 0;
+    if ui.checkbox(&mut sync, "Подсветка реагирует на вибрацию").changed() {
+        m.rgb[rgb::GRIP_SYNC] = sync as u8;
+    }
+    ui.add_space(8.0);
+    ui.label("Кадры анимации, которые проигрывает геймпад (сверху вниз):");
+    let (leds, frames) = (rgb::leds(&m.rgb), rgb::frames(&m.rgb));
+    let cell = 16.0;
+    let (rect, _) = ui.allocate_exact_size(Vec2::new(cell * leds as f32, cell * frames as f32), egui::Sense::hover());
+    for f in 0..frames {
+        for l in 0..leds {
+            let [r, g, b] = rgb::led(&m.rgb, f, l);
+            let min = rect.min + Vec2::new(l as f32 * cell, f as f32 * cell);
+            ui.painter().rect_filled(egui::Rect::from_min_size(min, Vec2::splat(cell - 2.0)), 3.0, Color32::from_rgb(r, g, b));
+        }
+    }
+}
+
 /// Draws the 9-point table the pad plays: travel to the right, output up, the diagonal for reference.
 fn curve_plot(ui: &mut egui::Ui, bank: &[u8; 9]) {
     let (rect, _) = ui.allocate_exact_size(Vec2::splat(180.0), egui::Sense::hover());
@@ -632,6 +694,7 @@ impl eframe::App for App {
                 (Tab::Sticks, "Стики"),
                 (Tab::Gyro, "Гироскоп"),
                 (Tab::Vibration, "Вибрация"),
+                (Tab::Lighting, "Подсветка"),
                 (Tab::Settings, "Настройки"),
             ] {
                 ui.selectable_value(&mut self.tab, t, name);
@@ -653,6 +716,7 @@ impl eframe::App for App {
                 Tab::Sticks => self.profile_tab(ui, sticks_editor),
                 Tab::Gyro => self.profile_tab(ui, gyro_editor),
                 Tab::Vibration => self.profile_tab(ui, vibration_editor),
+                Tab::Lighting => self.profile_tab(ui, lighting_editor),
                 Tab::Settings => self.settings_tab(ui),
             });
         });

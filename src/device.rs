@@ -128,18 +128,20 @@ impl Device {
         Ok(())
     }
 
-    /// Reads mapping and macros of a profile. The pad switches to that profile while answering.
+    /// Reads mapping, macros and lighting of a profile. The pad switches to that profile while answering.
     pub fn read_profile(&mut self, cfg: u8) -> Option<Profile> {
         let map = self.read_blob(cmd::MAP_READ, cfg).filter(|b| b.len() == map::SIZE)?;
         let macros = self.read_blob(cmd::MACRO_READ, cfg)?;
-        Some(Profile { map, macros })
+        let rgb = self.read_blob(cmd::RGB_READ, cfg)?;
+        Some(Profile { map, macros, rgb })
     }
 
-    /// Writes what changed in the same order as Space Station (mapping, then macros), commits the
+    /// Writes what changed in the same order as Space Station (mapping, macros, lighting), commits the
     /// running profile to flash and applies it, since macros only start playing after an apply.
     pub fn write_profile(&mut self, cfg: u8, old: &Profile, new: &Profile) -> Result<(), String> {
         self.write_blob(cmd::MAP_WRITE_START, cmd::MAP_WRITE_PACK, cfg, &old.map, &new.map)?;
         self.write_blob(cmd::MACRO_WRITE_START, cmd::MACRO_WRITE_PACK, cfg, &old.macros, &new.macros)?;
+        self.write_blob(cmd::RGB_WRITE_START, cmd::RGB_WRITE_PACK, cfg, &old.rgb, &new.rgb)?;
         // The SDK gives the flash write 10 s where every other command gets 500 ms.
         let version = map::version(&new.map).to_le_bytes();
         self.call_wait(proto::request(cmd::MAP_SAVE, &version), Duration::from_secs(10))
@@ -153,6 +155,7 @@ impl Device {
 pub struct Profile {
     pub map: Vec<u8>,
     pub macros: Vec<u8>,
+    pub rgb: Vec<u8>,
 }
 
 #[cfg(test)]
@@ -177,6 +180,7 @@ mod tests {
         proto::gyro::set(&mut new.map, proto::gyro::Gyro { target: 2, key: 10, enable: 1, sensitivity: 50, ..g });
         let v = proto::vibration::get(&orig.map);
         proto::vibration::set(&mut new.map, proto::vibration::Vibration { grip_strength: 70, trig_on: !v.trig_on, ..v });
+        proto::rgb::apply(&mut new.rgb, 1, &[[255, 0, 0], [0, 0, 255]]);
         map::set_version(&mut new.map, 0x1234);
         let tap = vec![macros::Step { delay_ms: 0, key: 7, event: 1 }, macros::Step { delay_ms: 40, key: 7, event: 0 }];
         new.macros = macros::encode(&orig.macros, &[macros::Macro { key: 18, kind: 1, interval_ms: 0, steps: tap }]).unwrap();

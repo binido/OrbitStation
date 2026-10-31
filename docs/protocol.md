@@ -119,6 +119,15 @@ Body: key id, step count u16, kind (1 once, 2 while held, 3 toggled), repeat pau
 2/3 sticks, 5 hold). The key's table entry must be `20 00 00`; a body left on a remapped key keeps playing.
 Verified on a Vader 5 Pro: a macro written this way plays from the button it is bound to.
 
+## Lighting (per profile)
+
+Read `a7 [profile, 20]`, write `a8 [profile, first, count, 20]` + `a9 [n, 20 bytes]`, then `a6` save.
+Vader 5 Pro: 320 bytes = 16 packets, 10 LEDs x 10 frames. Header: version u16 (`0x0300`), click feedback
+(freezes the shown frame, leave 0), loop start, loop end, cycle time (bigger = slower), brightness 0..100,
+LED count, effect id (0 off, 1 flow, 3 breath, 4 solid, 5 multi, 6 rainbow, 7 wave, 8 flash), grip sync,
+then 10 x `ff`. Frames follow at 20, 3 bytes per LED. The pad only plays frames, effects are generated
+on the host. Factory: wave, brightness 20, period 4.
+
 ## Reproducing
 
 ```bash
