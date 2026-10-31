@@ -113,6 +113,7 @@ is written there.
 Body: key id, step count u16, kind (1 once, 2 while held, 3 toggled), repeat pause u16 ms,
 6 x `ff`, 20-byte name, then per step: time since start u16 ms, key id, event (1 press, 0 release,
 2/3 sticks, 5 hold). The key's table entry must be `20 00 00`; a body left on a remapped key keeps playing.
+Verified on a Vader 5 Pro: a macro written this way plays from the button it is bound to.
 
 ## Reproducing
 
