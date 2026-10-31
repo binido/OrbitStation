@@ -104,6 +104,9 @@ struct App {
 
 impl App {
     fn new(ctx: &egui::Context) -> App {
+        // egui's text is smaller than a desktop's at the same scale (12.5 px body against ~14.5 px),
+        // so 100% here matches other apps.
+        ctx.all_styles_mut(|s| s.text_styles.values_mut().for_each(|f| f.size *= 1.16));
         let zoom = read_config("zoom").and_then(|z| z.parse().ok()).filter(|z| (0.5..=3.0).contains(z)).unwrap_or(1.0);
         ctx.set_zoom_factor(zoom);
         let mut app = App {
