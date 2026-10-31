@@ -1,0 +1,2 @@
+# Flydigi Vader 5 Pro: access to the vendor HID interfaces for the logged-in user
+KERNEL=="hidraw*", ATTRS{idVendor}=="37d7", ATTRS{idProduct}=="2401", TAG+="uaccess"
