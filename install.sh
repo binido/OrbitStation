@@ -13,6 +13,8 @@ SRC=${ORBITSTATION_SRC:-${XDG_DATA_HOME:-$HOME/.local/share}/orbitstation/src}
 RULE=/etc/udev/rules.d/70-orbitstation.rules
 BIN=$PREFIX/bin/orbitstation
 DESKTOP=$PREFIX/share/applications/orbitstation.desktop
+ICONS=$PREFIX/share/icons/hicolor
+ICON_SIZES="16 24 32 48 64 128 256"
 
 say() { printf '%s\n' "$*"; }
 die() { printf 'Ошибка: %s\n' "$*" >&2; exit 1; }
@@ -33,7 +35,9 @@ version_ok() {
 }
 
 uninstall() {
-    rm -f "$BIN" "$DESKTOP"
+    rm -f "$BIN" "$DESKTOP" "$ICONS/scalable/apps/orbitstation.svg"
+    for s in $ICON_SIZES; do rm -f "$ICONS/${s}x$s/apps/orbitstation.png"; done
+    have gtk-update-icon-cache && gtk-update-icon-cache -q -t "$ICONS" 2>/dev/null || true
     say "Программа удалена из $PREFIX."
     if [ -f "$RULE" ]; then
         if as_root rm -f "$RULE"; then
@@ -93,10 +97,18 @@ Type=Application
 Name=OrbitStation
 Comment=Flydigi controller settings
 Exec=$BIN
-Icon=input-gaming
+Icon=orbitstation
+StartupWMClass=orbitstation
 Terminal=false
 Categories=Settings;HardwareSettings;
 EOF
+mkdir -p "$ICONS/scalable/apps"
+cp "$SRC/assets/icons/orbitstation.svg" "$ICONS/scalable/apps/orbitstation.svg"
+for s in $ICON_SIZES; do
+    mkdir -p "$ICONS/${s}x$s/apps"
+    cp "$SRC/assets/icons/orbitstation-$s.png" "$ICONS/${s}x$s/apps/orbitstation.png"
+done
+have gtk-update-icon-cache && gtk-update-icon-cache -q -t "$ICONS" 2>/dev/null || true
 have update-desktop-database && update-desktop-database "$PREFIX/share/applications" 2>/dev/null || true
 
 if [ -z "$NO_UDEV" ] && ! cmp -s "$SRC/70-orbitstation.rules" "$RULE"; then
