@@ -83,7 +83,7 @@ commits the running profile to flash (up to 10 s). Verified on hardware.
 | 0 | 2 | proto version, LE (`0x0302` on Vader 5 Pro) |
 | 13 | 32 x 3 | key table, indexed by key id: target, turbo type, turbo frequency |
 | 109 | 2 x 7 | stick curve source: type, inner dead zone %, p1 x, p1 y, p2 x, p2 y, end (0..127 scale) |
-| 123 | 14 | trigger curves |
+| 123 | 2 x 7 | trigger travel on 0..255: type, start, start, start, end, end, end (factory `0 0 0 0 255 255 255`) |
 | 137 | 8 | gyro to stick |
 | 145 | 9 | grip vibration |
 | 225 | 2 | change tag, LE, `ffff` = never written |

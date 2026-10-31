@@ -186,6 +186,26 @@ pub mod stick {
     }
 }
 
+/// Trigger travel window at 123, 7 bytes per trigger on a 0..255 scale:
+/// type, start, p1 x, p1 y, p2 x, p2 y, end. The game still gets the full 0..255 range, squeezed
+/// into the part of the travel between start and end. Space Station mirrors the points onto the window.
+pub mod trigger {
+    const OFF: usize = 123;
+    const ENTRY: usize = 7;
+    pub const SIDES: [&str; 2] = ["LT", "RT"];
+
+    /// (start, end) of the travel, 0..255.
+    pub fn get(blob: &[u8], side: usize) -> (u8, u8) {
+        let e = &blob[OFF + side * ENTRY..][..ENTRY];
+        (e[1], e[6])
+    }
+
+    pub fn set(blob: &mut [u8], side: usize, start: u8, end: u8) {
+        let (lo, hi) = (start.min(end), start.max(end));
+        blob[OFF + side * ENTRY + 1..][..6].copy_from_slice(&[lo, lo, lo, hi, hi, hi]);
+    }
+}
+
 /// Macro store of protocol 3.2 (MacroConfigParserV10), one per profile. Vader 5 Pro answers 83 packets,
 /// Space Station writes only the first 81 and the pad keeps the tail itself (the last 4 bytes stay 0).
 /// Header: version u16, count u16, ten u16 body offsets in 4-byte words after the header.
@@ -558,6 +578,17 @@ mod tests {
         assert_eq!(blob[116..122], [0, 0, 63, 63, 127, 127]);
         assert_eq!(blob[812..814], [1, 10]);
         assert_eq!(stick::get(&blob, 1).edge, 10);
+    }
+
+    #[test]
+    fn trigger_window_mirrors_points() {
+        let mut blob = vec![0u8; map::SIZE];
+        // factory value read from a Vader 5 Pro
+        blob[123..137].copy_from_slice(&[0, 0, 0, 0, 255, 255, 255, 0, 0, 0, 0, 255, 255, 255]);
+        assert_eq!((trigger::get(&blob, 0), trigger::get(&blob, 1)), ((0, 255), (0, 255)));
+        trigger::set(&mut blob, 1, 200, 20);
+        assert_eq!(blob[130..137], [0, 20, 20, 20, 200, 200, 200]);
+        assert_eq!(trigger::get(&blob, 1), (20, 200));
     }
 
     #[test]

@@ -4,7 +4,7 @@ mod proto;
 use device::{Device, Profile};
 use eframe::egui::{self, Color32, Pos2, Stroke, Vec2};
 use proto::macros::{self, Macro, Step};
-use proto::{DeviceInfo, HwStatus, Toggle, cmd, map, stick};
+use proto::{DeviceInfo, HwStatus, Toggle, cmd, map, stick, trigger};
 use std::path::PathBuf;
 use std::time::{Duration, Instant, SystemTime, UNIX_EPOCH};
 
@@ -402,6 +402,24 @@ fn sticks_editor(ui: &mut egui::Ui, m: &mut Mapping) {
             }
         }
     });
+    ui.add_space(12.0);
+    ui.heading("Ход триггеров");
+    ui.label("Игра получает полное нажатие уже в конце выбранного участка, а до начала триггер молчит.");
+    for side in 0..2 {
+        let (old_start, old_end) = trigger::get(&m.map, side);
+        let pct = |b: u8| (b as u32 * 100 / 255) as u8;
+        let (mut start, mut end) = (pct(old_start), pct(old_end));
+        ui.horizontal(|ui| {
+            ui.strong(trigger::SIDES[side]);
+            ui.add(egui::Slider::new(&mut start, 0..=end).text("начало, %"));
+            ui.add(egui::Slider::new(&mut end, start..=100).text("полное нажатие, %"));
+        });
+        // Untouched values keep their exact bytes, the percent view rounds them.
+        if (start, end) != (pct(old_start), pct(old_end)) {
+            let byte = |p: u8| (p as u32 * 255 / 100) as u8;
+            trigger::set(&mut m.map, side, byte(start), byte(end));
+        }
+    }
 }
 
 /// Draws the 9-point table the pad plays: travel to the right, output up, the diagonal for reference.
