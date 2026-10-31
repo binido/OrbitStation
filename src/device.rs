@@ -38,14 +38,14 @@ impl Device {
     pub fn open() -> Result<Device, String> {
         let found = find_hidraw();
         if found.is_empty() {
-            return Err("Геймпад Vader 5 Pro не найден (подключи его кабелем)".into());
+            return Err(t!("Vader 5 Pro gamepad not found (connect it with a cable)").into());
         }
         let mut err = String::new();
         for path in found {
             match Device::open_path(path) {
                 Ok(d) if d.send(&proto::request(cmd::HEARTBEAT, &[])).is_some()
                     && d.reply(cmd::HEARTBEAT, Duration::from_millis(300)).is_some() => return Ok(d),
-                Ok(d) => err = format!("{} не отвечает, переподключи геймпад", d.path.display()),
+                Ok(d) => err = t!("{} does not answer, reconnect the gamepad", d.path.display()),
                 Err(e) => err = e,
             }
         }
@@ -54,7 +54,7 @@ impl Device {
 
     fn open_path(path: PathBuf) -> Result<Device, String> {
         let file = OpenOptions::new().read(true).write(true).open(&path).map_err(|e| {
-            format!("Нет доступа к {}: {e}. Установи udev-правило из README.", path.display())
+            t!("No access to {}: {}. Install the udev rule from the README.", path.display(), e)
         })?;
         let mut reader = file.try_clone().map_err(|e| e.to_string())?;
         let (tx, replies) = mpsc::channel();
@@ -148,12 +148,12 @@ impl Device {
     fn write_blob(&mut self, start_cmd: u8, pack_cmd: u8, cfg: u8, old: &[u8], new: &[u8]) -> Result<(), String> {
         let Some((start, count)) = map::changed_span(old, new) else { return Ok(()) };
         let head = [cfg, start as u8, count as u8, map::PKG as u8];
-        self.call(proto::request(start_cmd, &head)).ok_or("геймпад не принял начало записи")?;
+        self.call(proto::request(start_cmd, &head)).ok_or(t!("the gamepad did not accept the start of the write"))?;
         for i in 0..count {
             let mut pack = [0u8; map::PKG + 1];
             pack[0] = i as u8;
             pack[1..].copy_from_slice(&new[(start + i) * map::PKG..][..map::PKG]);
-            self.call(proto::request(pack_cmd, &pack)).ok_or_else(|| format!("геймпад не принял пакет {}", start + i))?;
+            self.call(proto::request(pack_cmd, &pack)).ok_or_else(|| t!("the gamepad did not accept packet {}", start + i))?;
         }
         Ok(())
     }
@@ -175,8 +175,8 @@ impl Device {
         // The SDK gives the flash write 10 s where every other command gets 500 ms.
         let version = map::version(&new.map).to_le_bytes();
         self.call_wait(proto::request(cmd::MAP_SAVE, &version), Duration::from_secs(10))
-            .ok_or("геймпад не подтвердил сохранение")?;
-        self.call(proto::request(cmd::APPLY_PROFILE, &[cfg])).ok_or("геймпад не применил профиль")?;
+            .ok_or(t!("the gamepad did not confirm the save"))?;
+        self.call(proto::request(cmd::APPLY_PROFILE, &[cfg])).ok_or(t!("the gamepad did not apply the profile"))?;
         Ok(())
     }
 }
@@ -187,7 +187,7 @@ impl Device {
     pub fn reset_all_profiles(&mut self) -> Result<(), String> {
         self.call_wait(proto::request(cmd::MAP_RESET, &[0]), Duration::from_secs(10))
             .map(|_| ())
-            .ok_or_else(|| "геймпад не подтвердил сброс".into())
+            .ok_or_else(|| t!("the gamepad did not confirm the reset").into())
     }
 }
 
@@ -274,7 +274,7 @@ mod tests {
             macros::Step { delay_ms: 20, key: 161, event: 3 },
             macros::Step { delay_ms: 200, key: 160, event: 3 },
         ];
-        map::set_title(&mut new.map, "Тест");
+        map::set_title(&mut new.map, "Test");
         new.macros = macros::encode(&orig.macros, &[macros::Macro { key: 18, kind: 1, interval_ms: 0, steps: tap }]).unwrap();
         let check = |d: &mut Device, want: &Profile| -> Result<(), String> {
             let back = d.read_profile(3).ok_or("no readback")?;

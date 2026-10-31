@@ -57,7 +57,7 @@ pub mod map {
 
     /// What a button may send: only XInput buttons, the extra ones are invisible to the host.
     pub const TARGETS: [(u8, &str); 18] = [
-        (IDENTITY, "По умолчанию"),
+        (IDENTITY, "Default"),
         (4, "A"), (5, "B"), (7, "X"), (8, "Y"),
         (0, "↑"), (2, "↓"), (3, "←"), (1, "→"),
         (10, "LB"), (11, "RB"), (12, "LT"), (13, "RT"),
@@ -65,7 +65,7 @@ pub mod map {
     ];
 
     /// Turbo modes, KeyMapTypeContinuousEnableType.
-    pub const TURBO: [(u8, &str); 3] = [(0, "Выкл"), (1, "Пока зажата"), (2, "Вкл/выкл нажатием")];
+    pub const TURBO: [(u8, &str); 3] = [(0, "Off"), (1, "While held"), (2, "Toggle on press")];
     pub const TURBO_MAX_HZ: u8 = 30;
 
     /// One key table entry: what the key sends, turbo mode and turbo presses per second.
@@ -136,8 +136,8 @@ pub mod stick {
     const EXTRA: usize = 12;
 
     /// JoystickSensitivityType, with the points each preset stands for.
-    pub const PRESETS: [(u8, &str); 4] = [(0, "Линейная"), (1, "Быстрая"), (2, "Плавная"), (3, "Своя")];
-    pub const SIDES: [&str; 2] = ["Левый стик", "Правый стик"];
+    pub const PRESETS: [(u8, &str); 4] = [(0, "Linear"), (1, "Fast"), (2, "Smooth"), (3, "Custom")];
+    pub const SIDES: [&str; 2] = ["Left stick", "Right stick"];
 
     #[derive(Clone, Copy, PartialEq, Debug)]
     pub struct Stick {
@@ -234,9 +234,9 @@ pub mod trigger {
 pub mod gyro {
     const OFF: usize = 137;
     /// MotionMapType. 3 (mouse) is done on the host by Space Station, so it is not offered.
-    pub const TARGETS: [(u8, &str); 3] = [(0, "Выключен"), (2, "Правый стик (прицел)"), (1, "Левый стик (руль)")];
+    pub const TARGETS: [(u8, &str); 3] = [(0, "Disabled"), (2, "Right stick (aim)"), (1, "Left stick (steering)")];
     /// MotionEnableType.
-    pub const ENABLE: [(u8, &str); 2] = [(1, "Пока зажата"), (0, "Вкл/выкл нажатием")];
+    pub const ENABLE: [(u8, &str); 2] = [(1, "While held"), (0, "Toggle on press")];
     /// ControllerKey.None.
     pub const NO_KEY: u8 = 255;
 
@@ -330,14 +330,14 @@ pub mod rgb {
 
     /// Space Station's effect ids; the id only records which generator produced the frames.
     pub const EFFECTS: [(u8, &str); 8] = [
-        (0, "Выключено"),
-        (4, "Один цвет"),
-        (5, "Несколько цветов"),
-        (3, "Дыхание"),
-        (1, "Поток"),
-        (6, "Радуга"),
-        (7, "Волна"),
-        (8, "Вспышки"),
+        (0, "Lights off"),
+        (4, "Single color"),
+        (5, "Several colors"),
+        (3, "Breathing"),
+        (1, "Flow"),
+        (6, "Rainbow"),
+        (7, "Wave"),
+        (8, "Flashes"),
     ];
     pub const MAX_COLORS: usize = 5;
     pub type Rgb = [u8; 3];
@@ -423,12 +423,12 @@ pub mod macros {
     const OWNED: usize = 81 * 20;
 
     /// MacroEnableType.
-    pub const KINDS: [(u8, &str); 3] = [(1, "Один раз"), (2, "Пока зажата"), (3, "Вкл/выкл нажатием")];
+    pub const KINDS: [(u8, &str); 3] = [(1, "Once"), (2, "While held"), (3, "Toggle on press")];
     /// MacroActionEvent. Space Station never writes 5 (hold): its "hold" is a press and a release.
-    pub const EVENTS: [(u8, &str); 4] = [(1, "Нажать"), (0, "Отпустить"), (2, "Левый стик"), (3, "Правый стик")];
+    pub const EVENTS: [(u8, &str); 4] = [(1, "Press"), (0, "Release"), (2, "Left stick"), (3, "Right stick")];
     /// Stick steps carry a direction instead of a key, ControllerKey_Joystick_*; Center releases the stick.
     pub const DIRECTIONS: [(u8, &str); 9] = [
-        (161, "↑"), (162, "↗"), (163, "→"), (164, "↘"), (165, "↓"), (166, "↙"), (167, "←"), (168, "↖"), (160, "Центр"),
+        (161, "↑"), (162, "↗"), (163, "→"), (164, "↘"), (165, "↓"), (166, "↙"), (167, "←"), (168, "↖"), (160, "Center"),
     ];
 
     pub fn is_stick(event: u8) -> bool {
@@ -486,7 +486,7 @@ pub mod macros {
     /// unused bytes are ff like erased flash.
     pub fn encode(old: &[u8], list: &[Macro]) -> Result<Vec<u8>, String> {
         if list.len() > SLOTS {
-            return Err(format!("не больше {SLOTS} макросов"));
+            return Err(t!("no more than {} macros", SLOTS));
         }
         let mut out = old.to_vec();
         let owned = OWNED.min(out.len());
@@ -495,7 +495,7 @@ pub mod macros {
         let mut p = HEADER;
         for (i, m) in list.iter().enumerate() {
             if p + BODY + 4 * m.steps.len() > owned {
-                return Err("макросы не помещаются в память геймпада".into());
+                return Err(t!("the macros do not fit in the gamepad memory").into());
             }
             out[4 + 2 * i..][..2].copy_from_slice(&(((p - HEADER) / 4) as u16).to_le_bytes());
             out[p] = m.key;
@@ -504,7 +504,7 @@ pub mod macros {
             out[p + 4..p + 6].copy_from_slice(&m.interval_ms.to_le_bytes());
             let mut t = 0u16;
             for (j, s) in m.steps.iter().enumerate() {
-                t = t.checked_add(s.delay_ms).ok_or("макрос длиннее 65 секунд")?;
+                t = t.checked_add(s.delay_ms).ok_or(t!("a macro is longer than 65 seconds"))?;
                 let at = p + BODY + 4 * j;
                 out[at..at + 2].copy_from_slice(&t.to_le_bytes());
                 out[at + 2] = s.key;
@@ -560,15 +560,15 @@ impl Toggle {
 
     pub fn label(self) -> &'static str {
         match self {
-            Toggle::QuickSwitchConfig => "Быстрое переключение профилей",
-            Toggle::XboxHomeButton => "Кнопка Home как Xbox Guide",
-            Toggle::MotionDebounce => "Подавление дрожания гироскопа",
-            Toggle::MappingSwitch => "Переключение раскладки",
-            Toggle::JoystickDebounce => "Подавление дрожания стиков",
-            Toggle::JoystickAutoCalibration => "Автокалибровка стиков",
-            Toggle::JoystickRebound => "Алгоритм возврата стиков",
-            Toggle::ScreenStatusBar => "Строка состояния на экране всегда",
-            Toggle::Audio => "Аудио через геймпад",
+            Toggle::QuickSwitchConfig => t!("Quick profile switching"),
+            Toggle::XboxHomeButton => t!("Home button as Xbox Guide"),
+            Toggle::MotionDebounce => t!("Gyro jitter filter"),
+            Toggle::MappingSwitch => t!("Layout switching"),
+            Toggle::JoystickDebounce => t!("Stick jitter filter"),
+            Toggle::JoystickAutoCalibration => t!("Stick auto-calibration"),
+            Toggle::JoystickRebound => t!("Stick rebound algorithm"),
+            Toggle::ScreenStatusBar => t!("Always show the on-screen status bar"),
+            Toggle::Audio => t!("Audio through the gamepad"),
         }
     }
 
@@ -639,7 +639,7 @@ pub fn parse_nickname(p: &[u8]) -> String {
 pub fn model_name(device_id: u8) -> &'static str {
     match device_id {
         130 | 144 | 145 => "Flydigi Vader 5 Pro",
-        _ => "Неизвестный Flydigi",
+        _ => t!("Unknown Flydigi"),
     }
 }
 
@@ -690,17 +690,17 @@ pub fn parse_profile(p: &[u8]) -> u8 {
 
 pub const REPORT_RATES: [(u8, &str); 4] = [(1, "1000 Hz"), (2, "500 Hz"), (3, "250 Hz"), (4, "125 Hz")];
 pub const SLEEP_TIMES: [(u8, &str); 6] =
-    [(1, "1 мин"), (5, "5 мин"), (15, "15 мин"), (60, "1 час"), (180, "3 часа"), (0, "Никогда")];
+    [(1, "1 min"), (5, "5 min"), (15, "15 min"), (60, "1 hour"), (180, "3 hours"), (0, "Never")];
 pub const PRECISIONS: [(u8, &str); 7] =
     [(1, "8 bit"), (4, "9 bit"), (2, "10 bit"), (5, "11 bit"), (3, "12 bit"), (6, "14 bit"), (7, "16 bit")];
 pub const SENSITIVITIES: [(u8, &str); 7] = [
-    (14, "Самая высокая"),
-    (15, "Высокая"),
-    (16, "Выше средней"),
-    (17, "Средняя"),
-    (18, "Ниже средней"),
-    (19, "Низкая"),
-    (20, "Самая низкая"),
+    (14, "Highest"),
+    (15, "High"),
+    (16, "Above average"),
+    (17, "Average"),
+    (18, "Below average"),
+    (19, "Low"),
+    (20, "Lowest"),
 ];
 
 #[derive(Clone, Copy, Default, Debug, PartialEq)]

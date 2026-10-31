@@ -1,3 +1,5 @@
+#[macro_use]
+mod i18n;
 mod device;
 mod proto;
 
@@ -49,7 +51,7 @@ impl Mapping {
     /// Puts a profile from a file or the factory template into the editor, the device copy stays.
     fn replace(&mut self, p: &Profile) -> Result<(), String> {
         if (p.map.len(), p.macros.len(), p.rgb.len()) != (self.device.map.len(), self.device.macros.len(), self.device.rgb.len()) {
-            return Err("файл от другого геймпада или повреждён".into());
+            return Err(t!("the file is from another gamepad or damaged").into());
         }
         self.map = p.map.clone();
         self.macros = macros::parse(&p.macros);
@@ -64,7 +66,7 @@ impl Mapping {
         for (id, name) in map::KEYS {
             let count = self.macros.iter().filter(|m| m.key == id).count();
             if count > 1 {
-                return Err(format!("на кнопке {name} несколько макросов"));
+                return Err(t!("button {} has more than one macro", name));
             }
             if count == 1 {
                 map::set_key(&mut map, id, map::Key { target: map::MACRO, turbo: 0, hz: 0 });
@@ -134,7 +136,7 @@ impl App {
     fn call(&mut self, pkt: [u8; proto::PKT]) -> Option<[u8; proto::PKT]> {
         let r = self.dev.as_mut()?.call(pkt);
         if r.is_none() {
-            self.note = format!("Геймпад не ответил на команду 0x{:02x}", pkt[2]);
+            self.note = t!("The gamepad did not answer command 0x{}", format!("{:02x}", pkt[2]));
         }
         r
     }
@@ -164,66 +166,66 @@ impl App {
     /// Sends a setting and reports the outcome in the status line.
     fn apply(&mut self, pkt: [u8; proto::PKT], what: &str) {
         self.note = match self.call(pkt) {
-            Some(_) => format!("Сохранено: {what}"),
-            None => format!("Не удалось применить: {what}"),
+            Some(_) => t!("Saved: {}", what),
+            None => t!("Could not apply: {}", what),
         };
     }
 
     fn device_tab(&mut self, ui: &mut egui::Ui) {
         let Some(info) = self.info.clone() else {
-            ui.label("Нет данных от геймпада.");
+            ui.label(t!("No data from the gamepad."));
             return;
         };
         egui::Grid::new("info").num_columns(2).spacing([24.0, 6.0]).show(ui, |ui| {
-            ui.label("Модель");
+            ui.label(t!("Model"));
             ui.strong(proto::model_name(info.device_id));
             ui.end_row();
-            ui.label("Имя геймпада");
+            ui.label(t!("Gamepad name"));
             ui.horizontal(|ui| {
-                ui.add(egui::TextEdit::singleline(&mut self.nickname).hint_text("без имени").desired_width(180.0));
-                if ui.button("Сохранить имя").clicked() {
+                ui.add(egui::TextEdit::singleline(&mut self.nickname).hint_text(t!("no name")).desired_width(180.0));
+                if ui.button(t!("Save name")).clicked() {
                     let name = self.nickname.clone();
-                    self.apply(proto::nickname_packet(&name), "имя геймпада");
+                    self.apply(proto::nickname_packet(&name), t!("gamepad name"));
                 }
             });
             ui.end_row();
-            ui.label("ID устройства");
+            ui.label(t!("Device ID"));
             ui.label(info.device_id.to_string());
             ui.end_row();
-            ui.label("Прошивка");
+            ui.label(t!("Firmware"));
             ui.label(&info.firmware);
             ui.end_row();
-            ui.label("Радиомодуль");
+            ui.label(t!("Radio module"));
             ui.label(&info.nearlink);
             ui.end_row();
-            ui.label("Батарея");
-            ui.label(if info.charging { "Заряжается".to_string() } else { format!("{} / 5", info.battery) });
+            ui.label(t!("Battery"));
+            ui.label(if info.charging { t!("Charging").to_string() } else { format!("{} / 5", info.battery) });
             ui.end_row();
-            ui.label("Узел");
+            ui.label(t!("Device node"));
             ui.monospace(self.dev.as_ref().map(|d| d.path.display().to_string()).unwrap_or_default());
             ui.end_row();
         });
         ui.add_space(16.0);
-        ui.heading("Профиль");
+        ui.heading(t!("Profile"));
         ui.horizontal(|ui| {
             for p in 0..4u8 {
-                if ui.selectable_label(self.profile == p, format!("Профиль {}", p + 1)).clicked() && self.profile != p {
+                if ui.selectable_label(self.profile == p, t!("Profile {}", p + 1)).clicked() && self.profile != p {
                     self.profile = p;
                     self.mapping = None;
-                    self.apply(proto::request(cmd::APPLY_PROFILE, &[p]), &format!("профиль {}", p + 1));
+                    self.apply(proto::request(cmd::APPLY_PROFILE, &[p]), &t!("profile {}", p + 1));
                 }
             }
         });
         ui.add_space(8.0);
-        if ui.button("Обновить").clicked() {
+        if ui.button(t!("Refresh")).clicked() {
             self.refresh();
         }
         ui.add_space(24.0);
-        ui.heading("Сброс всех профилей");
-        ui.label("Как «Restore default» в Space Station: все 4 профиля станут заводскими. Общие настройки не меняются.");
-        ui.label("Перед сбросом приложение сохранит копии всех профилей, их можно будет загрузить из файла.");
-        ui.checkbox(&mut self.confirm_reset_all, "Понимаю, что все 4 профиля будут стёрты");
-        if ui.add_enabled(self.confirm_reset_all, egui::Button::new("Сбросить все профили")).clicked() {
+        ui.heading(t!("Factory reset of all profiles"));
+        ui.label(t!("Like 'Restore default' in Space Station: all 4 profiles go back to factory settings. General settings stay as they are."));
+        ui.label(t!("Before the reset the app saves copies of all profiles, you can load them back from a file."));
+        ui.checkbox(&mut self.confirm_reset_all, t!("I understand that all 4 profiles will be erased"));
+        if ui.add_enabled(self.confirm_reset_all, egui::Button::new(t!("Reset all profiles"))).clicked() {
             self.confirm_reset_all = false;
             self.reset_all();
         }
@@ -236,14 +238,14 @@ impl App {
             match dev.read_profile(cfg).map(|p| backup_profile(cfg, &p)) {
                 Some(Ok(_)) => {}
                 _ => {
-                    self.note = format!("Не удалось сохранить копию профиля {}, сброс отменён", cfg + 1);
+                    self.note = t!("Could not back up profile {}, the reset is cancelled", cfg + 1);
                     dev.call(proto::request(cmd::APPLY_PROFILE, &[self.profile]));
                     return;
                 }
             }
         }
         self.note = match dev.reset_all_profiles() {
-            Ok(()) => format!("Все профили сброшены, копии в {}", data_dir().join("backups").display()),
+            Ok(()) => t!("All profiles reset, copies are in {}", data_dir().join("backups").display()),
             Err(e) => e,
         };
         dev.call(proto::request(cmd::APPLY_PROFILE, &[self.profile]));
@@ -255,10 +257,10 @@ impl App {
         let input = self.dev.as_ref().and_then(|d| *d.input.lock().unwrap()).unwrap_or_default();
         ui.ctx().request_repaint_after(Duration::from_millis(16));
         ui.horizontal(|ui| {
-            stick(ui, "Левый стик", input.lx, input.ly, input.buttons & 1 << 14 != 0);
-            stick(ui, "Правый стик", input.rx, input.ry, input.buttons & 1 << 15 != 0);
+            stick(ui, t!("Left stick"), input.lx, input.ly, input.buttons & 1 << 14 != 0);
+            stick(ui, t!("Right stick"), input.rx, input.ry, input.buttons & 1 << 15 != 0);
             ui.vertical(|ui| {
-                ui.label("Триггеры");
+                ui.label(t!("Triggers"));
                 ui.add(egui::ProgressBar::new(input.lt as f32 / 255.0).text(format!("LT {}", input.lt)).desired_width(160.0));
                 ui.add(egui::ProgressBar::new(input.rt as f32 / 255.0).text(format!("RT {}", input.rt)).desired_width(160.0));
             });
@@ -274,12 +276,12 @@ impl App {
             }
         });
         ui.add_space(8.0);
-        ui.monospace(format!("Гироскоп      {:>7} {:>7} {:>7}", input.gyro[0], input.gyro[1], input.gyro[2]));
-        ui.monospace(format!("Акселерометр  {:>7} {:>7} {:>7}", input.accel[0], input.accel[1], input.accel[2]));
+        ui.monospace(format!("{:<14}{:>7} {:>7} {:>7}", t!("Gyro"), input.gyro[0], input.gyro[1], input.gyro[2]));
+        ui.monospace(format!("{:<14}{:>7} {:>7} {:>7}", t!("Accelerometer"), input.accel[0], input.accel[1], input.accel[2]));
         ui.add_space(16.0);
-        ui.heading("Вибрация");
+        ui.heading(t!("Vibration"));
         let old = self.vibration;
-        for (v, name) in self.vibration.iter_mut().zip(["левая рукоятка", "правая рукоятка", "мотор LT", "мотор RT"]) {
+        for (v, name) in self.vibration.iter_mut().zip([t!("left grip"), t!("right grip"), t!("LT motor"), t!("RT motor")]) {
             ui.add(egui::Slider::new(v, 0..=255).text(name));
         }
         if old != self.vibration {
@@ -293,9 +295,9 @@ impl App {
         match self.dev.as_mut().and_then(|d| d.read_profile(cfg)) {
             Some(p) => {
                 self.mapping = Some(Mapping::new(cfg, p));
-                self.note = format!("Профиль {} загружен", cfg + 1);
+                self.note = t!("Profile {} loaded", cfg + 1);
             }
-            None => self.note = "Не удалось прочитать профиль".into(),
+            None => self.note = t!("Could not read the profile").into(),
         }
     }
 
@@ -314,15 +316,15 @@ impl App {
         }
         let backup = backup_profile(m.cfg, &m.device);
         self.note = match dev.write_profile(m.cfg, &m.device, &new) {
-            Err(e) => format!("Запись не удалась: {e}"),
+            Err(e) => t!("Write failed: {}", e),
             Ok(()) if dev.read_profile(m.cfg).as_ref() != Some(&new) => {
-                "Записано, но проверочное чтение не совпало, загрузи профиль заново".into()
+                t!("Written, but the check read did not match, load the profile again").into()
             }
             Ok(()) => {
                 *m = Mapping::new(m.cfg, new);
                 match backup {
-                    Ok(path) => format!("Профиль сохранён, прежняя копия: {}", path.display()),
-                    Err(e) => format!("Профиль сохранён, но копию сделать не удалось: {e}"),
+                    Ok(path) => t!("Profile saved, previous copy: {}", path.display()),
+                    Err(e) => t!("Profile saved, but the copy could not be made: {}", e),
                 }
             }
         };
@@ -331,8 +333,8 @@ impl App {
     /// Shows an editor of the loaded profile with the shared write controls under it.
     fn profile_tab(&mut self, ui: &mut egui::Ui, editor: fn(&mut egui::Ui, &mut Mapping)) {
         if self.mapping.as_ref().is_none_or(|m| m.cfg != self.profile) {
-            ui.label(format!("Профиль {} ещё не загружен.", self.profile + 1));
-            if ui.button("Загрузить с геймпада").clicked() {
+            ui.label(t!("Profile {} is not loaded yet.", self.profile + 1));
+            if ui.button(t!("Load from gamepad")).clicked() {
                 self.load_mapping();
             }
             return;
@@ -353,14 +355,14 @@ impl App {
         }
         let dirty = built.is_ok_and(|p| p != m.device);
         ui.horizontal(|ui| {
-            if ui.add_enabled(dirty, egui::Button::new("Записать на геймпад")).clicked() {
+            if ui.add_enabled(dirty, egui::Button::new(t!("Write to gamepad"))).clicked() {
                 self.save_mapping();
             }
             let m = self.mapping.as_mut().unwrap();
-            if ui.add_enabled(dirty, egui::Button::new("Отменить изменения")).clicked() {
+            if ui.add_enabled(dirty, egui::Button::new(t!("Discard changes"))).clicked() {
                 *m = Mapping::new(m.cfg, m.device.clone());
             }
-            if ui.button("Перечитать").clicked() {
+            if ui.button(t!("Reload")).clicked() {
                 self.load_mapping();
             }
         });
@@ -370,46 +372,46 @@ impl App {
     fn profile_files(&mut self, ui: &mut egui::Ui) {
         let m = self.mapping.as_mut().unwrap();
         ui.horizontal(|ui| {
-            ui.strong(format!("Профиль {}", m.cfg + 1));
+            ui.strong(t!("Profile {}", m.cfg + 1));
             let mut title = map::title(&m.map);
             let edit = egui::TextEdit::singleline(&mut title).char_limit(map::TITLE_CHARS).desired_width(140.0);
-            if ui.add(edit).on_hover_text("Название профиля, до 10 символов").changed() {
+            if ui.add(edit).on_hover_text(t!("Profile name, up to 10 characters")).changed() {
                 map::set_title(&mut m.map, &title);
             }
-            if ui.button("Заводской профиль").on_hover_text("Только этот профиль, остальные не трогаются").clicked() {
+            if ui.button(t!("Factory profile")).on_hover_text(t!("Only this profile, the others stay untouched")).clicked() {
                 let factory = Profile::factory(m.cfg);
-                self.note = m.replace(&factory).map_or_else(|e| e, |_| "Заводские значения подставлены, нажми «Записать на геймпад»".into());
+                self.note = m.replace(&factory).map_or_else(|e| e, |_| t!("Factory values filled in, press 'Write to gamepad'").into());
             }
         });
         ui.horizontal(|ui| {
-            if ui.button("Сохранить в файл").clicked() {
+            if ui.button(t!("Save to file")).clicked() {
                 let m = self.mapping.as_ref().unwrap();
                 let name = map::title(&m.map).chars().filter(|c| c.is_alphanumeric() || " -_".contains(*c)).collect::<String>();
                 let name = if name.trim().is_empty() { format!("profile{}", m.cfg + 1) } else { name.trim().to_string() };
                 let path = data_dir().join("profiles").join(format!("{name}.osp"));
                 self.note = match m.build().and_then(|p| write_file(&path, &p.to_file()).map_err(|e| e.to_string())) {
-                    Ok(()) => format!("Сохранено в {}", path.display()),
-                    Err(e) => format!("Не удалось сохранить: {e}"),
+                    Ok(()) => t!("Saved to {}", path.display()),
+                    Err(e) => t!("Could not save: {}", e),
                 };
             }
             let files = profile_files();
-            let label = self.import_pick.as_ref().map_or("выбери файл".to_string(), |p| file_label(p));
+            let label = self.import_pick.as_ref().map_or(t!("choose a file").to_string(), |p| file_label(p));
             egui::ComboBox::from_id_salt("import").selected_text(label).width(260.0).show_ui(ui, |ui| {
                 for f in files {
                     let text = file_label(&f);
                     ui.selectable_value(&mut self.import_pick, Some(f), text);
                 }
             });
-            if ui.add_enabled(self.import_pick.is_some(), egui::Button::new("Загрузить из файла")).clicked() {
+            if ui.add_enabled(self.import_pick.is_some(), egui::Button::new(t!("Load from file"))).clicked() {
                 let path = self.import_pick.clone().unwrap();
-                let loaded = std::fs::read(&path).ok().and_then(|d| Profile::from_file(&d)).ok_or("не удалось прочитать файл".to_string());
+                let loaded = std::fs::read(&path).ok().and_then(|d| Profile::from_file(&d)).ok_or(t!("could not read the file").to_string());
                 let m = self.mapping.as_mut().unwrap();
                 self.note = match loaded.and_then(|p| m.replace(&p)) {
-                    Ok(()) => format!("Загружено из {}, нажми «Записать на геймпад»", file_label(&path)),
+                    Ok(()) => t!("Loaded from {}, press 'Write to gamepad'", file_label(&path)),
                     Err(e) => e,
                 };
             }
-            if ui.button("Открыть папку").clicked() {
+            if ui.button(t!("Open folder")).clicked() {
                 let dir = data_dir();
                 let _ = std::fs::create_dir_all(dir.join("profiles"));
                 let _ = std::process::Command::new("xdg-open").arg(dir).spawn();
@@ -418,8 +420,28 @@ impl App {
     }
 
     fn settings_tab(&mut self, ui: &mut egui::Ui) {
+        ui.horizontal(|ui| {
+            ui.label(t!("Language"));
+            let mut lang = i18n::current();
+            let name = |l| i18n::LANGS.iter().find(|x| x.0 == l).unwrap().2;
+            egui::ComboBox::from_id_salt("language").selected_text(name(lang)).show_ui(ui, |ui| {
+                for (l, _, n) in i18n::LANGS {
+                    ui.selectable_value(&mut lang, l, n);
+                }
+            });
+            if lang != i18n::current() {
+                i18n::set(lang);
+                if let Err(e) = i18n::save(lang) {
+                    self.note = t!("Could not save: {}", e);
+                }
+            }
+        });
+        ui.add_space(12.0);
+        if self.dev.is_none() {
+            return;
+        }
         let Some(mut st) = self.status.clone() else {
-            ui.label("Нет данных о настройках.");
+            ui.label(t!("No settings data."));
             return;
         };
         for t in Toggle::ALL {
@@ -437,7 +459,7 @@ impl App {
             ui.label(title);
             ui.horizontal_wrapped(|ui| {
                 for (v, name) in opts {
-                    if ui.radio_value(value, *v, *name).clicked() {
+                    if ui.radio_value(value, *v, i18n::tr(name)).clicked() {
                         app.apply(proto::request(c, &[*v]), title);
                     }
                 }
@@ -445,15 +467,15 @@ impl App {
             ui.add_space(6.0);
         };
         if st.report_rate != 0 {
-            choice(ui, "Частота опроса стиков", &mut st.report_rate, &proto::REPORT_RATES, cmd::REPORT_RATE, self);
+            choice(ui, t!("Stick polling rate"), &mut st.report_rate, &proto::REPORT_RATES, cmd::REPORT_RATE, self);
         }
         if st.precision != 0 {
-            choice(ui, "Точность стиков", &mut st.precision, &proto::PRECISIONS, cmd::PRECISION, self);
+            choice(ui, t!("Stick precision"), &mut st.precision, &proto::PRECISIONS, cmd::PRECISION, self);
         }
         if st.sensitivity != 0 {
-            choice(ui, "Чувствительность в центре стика", &mut st.sensitivity, &proto::SENSITIVITIES, cmd::SENSITIVITY, self);
+            choice(ui, t!("Sensitivity near the stick center"), &mut st.sensitivity, &proto::SENSITIVITIES, cmd::SENSITIVITY, self);
         }
-        choice(ui, "Время до сна", &mut st.sleep_time, &proto::SLEEP_TIMES, cmd::SLEEP_TIME, self);
+        choice(ui, t!("Time until sleep"), &mut st.sleep_time, &proto::SLEEP_TIMES, cmd::SLEEP_TIME, self);
         self.status = Some(st);
     }
 }
@@ -489,7 +511,7 @@ fn profile_files() -> Vec<PathBuf> {
 
 fn file_label(p: &std::path::Path) -> String {
     let name = p.file_stem().unwrap_or_default().to_string_lossy();
-    if p.parent().is_some_and(|d| d.ends_with("backups")) { format!("копия: {name}") } else { name.into_owned() }
+    if p.parent().is_some_and(|d| d.ends_with("backups")) { t!("backup: {}", name) } else { name.into_owned() }
 }
 
 /// Saves the profile as it was on the pad before a write, the app has no other undo for flash.
@@ -509,28 +531,28 @@ fn new_version(blob: &[u8]) -> u16 {
 }
 
 fn name_of(list: &[(u8, &str)], v: u8) -> String {
-    list.iter().find(|t| t.0 == v).map_or_else(|| format!("#{v}"), |t| t.1.to_string())
+    list.iter().find(|t| t.0 == v).map_or_else(|| format!("#{v}"), |t| i18n::tr(t.1).to_string())
 }
 
 fn pick(ui: &mut egui::Ui, id: impl egui::AsIdSalt, value: &mut u8, list: &[(u8, &str)], width: f32) {
     egui::ComboBox::from_id_salt(id).selected_text(name_of(list, *value)).width(width).show_ui(ui, |ui| {
         for (v, n) in list {
-            ui.selectable_value(value, *v, *n);
+            ui.selectable_value(value, *v, i18n::tr(n));
         }
     });
 }
 
 fn remap_editor(ui: &mut egui::Ui, m: &mut Mapping) {
-    ui.label("Кнопка слева будет нажимать то, что выбрано справа.");
+    ui.label(t!("The button on the left presses what is chosen on the right."));
     keys_grid(ui, m);
-    if ui.button("Кнопки по умолчанию").clicked() {
+    if ui.button(t!("Default buttons")).clicked() {
         for (id, _) in map::KEYS {
             map::set_key(&mut m.map, id, map::Key { target: map::IDENTITY, turbo: 0, hz: 0 });
         }
         m.macros.clear();
     }
     ui.add_space(12.0);
-    ui.heading("Макросы");
+    ui.heading(t!("Macros"));
     macros_editor(ui, m);
 }
 
@@ -541,10 +563,10 @@ fn sticks_editor(ui: &mut egui::Ui, m: &mut Mapping) {
             let mut s = old;
             egui::Frame::group(ui.style()).show(ui, |ui| {
                 ui.vertical(|ui| {
-                    ui.heading(stick::SIDES[side]);
+                    ui.heading(i18n::tr(stick::SIDES[side]));
                     curve_plot(ui, &stick::bank(&m.map, side));
                     ui.horizontal(|ui| {
-                        ui.label("Кривая");
+                        ui.label(t!("Curve"));
                         pick(ui, ("curve", side), &mut s.kind, &stick::PRESETS, 110.0);
                     });
                     // Preset points are applied on a change only, a stored curve stays byte for byte.
@@ -553,14 +575,14 @@ fn sticks_editor(ui: &mut egui::Ui, m: &mut Mapping) {
                             (s.p1, s.p2) = (p1, p2);
                         }
                     } else {
-                        ui.add(egui::Slider::new(&mut s.p1.0, 0..=127).text("точка 1: ход"));
-                        ui.add(egui::Slider::new(&mut s.p1.1, 0..=127).text("точка 1: отклик"));
-                        ui.add(egui::Slider::new(&mut s.p2.0, 0..=127).text("точка 2: ход"));
-                        ui.add(egui::Slider::new(&mut s.p2.1, 0..=127).text("точка 2: отклик"));
+                        ui.add(egui::Slider::new(&mut s.p1.0, 0..=127).text(t!("point 1: travel")));
+                        ui.add(egui::Slider::new(&mut s.p1.1, 0..=127).text(t!("point 1: output")));
+                        ui.add(egui::Slider::new(&mut s.p2.0, 0..=127).text(t!("point 2: travel")));
+                        ui.add(egui::Slider::new(&mut s.p2.1, 0..=127).text(t!("point 2: output")));
                     }
-                    ui.add(egui::Slider::new(&mut s.center, 0..=100 - s.edge).text("мёртвая зона в центре, %"));
-                    ui.add(egui::Slider::new(&mut s.edge, 0..=100 - s.center).text("внешняя мёртвая зона, %"));
-                    ui.checkbox(&mut s.circular, "Круглая зона хода");
+                    ui.add(egui::Slider::new(&mut s.center, 0..=100 - s.edge).text(t!("center dead zone, %")));
+                    ui.add(egui::Slider::new(&mut s.edge, 0..=100 - s.center).text(t!("outer dead zone, %")));
+                    ui.checkbox(&mut s.circular, t!("Circular travel area"));
                 });
             });
             if s != old {
@@ -569,16 +591,16 @@ fn sticks_editor(ui: &mut egui::Ui, m: &mut Mapping) {
         }
     });
     ui.add_space(12.0);
-    ui.heading("Ход триггеров");
-    ui.label("Игра получает полное нажатие уже в конце выбранного участка, а до начала триггер молчит.");
+    ui.heading(t!("Trigger travel"));
+    ui.label(t!("The game gets a full press at the end of the chosen range and nothing before its start."));
     for side in 0..2 {
         let (old_start, old_end) = trigger::get(&m.map, side);
         let pct = |b: u8| (b as u32 * 100 / 255) as u8;
         let (mut start, mut end) = (pct(old_start), pct(old_end));
         ui.horizontal(|ui| {
             ui.strong(trigger::SIDES[side]);
-            ui.add(egui::Slider::new(&mut start, 0..=end).text("начало, %"));
-            ui.add(egui::Slider::new(&mut end, start..=100).text("полное нажатие, %"));
+            ui.add(egui::Slider::new(&mut start, 0..=end).text(t!("start, %")));
+            ui.add(egui::Slider::new(&mut end, start..=100).text(t!("full press, %")));
         });
         // Untouched values keep their exact bytes, the percent view rounds them.
         if (start, end) != (pct(old_start), pct(old_end)) {
@@ -589,35 +611,35 @@ fn sticks_editor(ui: &mut egui::Ui, m: &mut Mapping) {
 }
 
 fn gyro_editor(ui: &mut egui::Ui, m: &mut Mapping) {
-    ui.label("Наклон геймпада двигает выбранный стик. Работает в любой игре без программ на компьютере,");
-    ui.label("но только пока гироскоп включён кнопкой.");
+    ui.label(t!("Tilting the gamepad moves the chosen stick. It works in any game with no software on the computer,"));
+    ui.label(t!("but only while the gyro is turned on with a button."));
     ui.add_space(8.0);
     let old = gyro::get(&m.map);
     let mut g = old;
-    let mut keys = vec![(gyro::NO_KEY, "Нет")];
+    let mut keys = vec![(gyro::NO_KEY, t!("None"))];
     keys.extend(map::KEYS);
     egui::Grid::new("gyro").num_columns(2).spacing([16.0, 8.0]).show(ui, |ui| {
-        ui.label("Гироскоп управляет");
+        ui.label(t!("Gyro controls"));
         pick(ui, "target", &mut g.target, &gyro::TARGETS, 200.0);
         ui.end_row();
-        ui.label("Кнопка включения");
+        ui.label(t!("Activation button"));
         pick(ui, "key", &mut g.key, &keys, 200.0);
         ui.end_row();
-        ui.label("Вторая кнопка");
+        ui.label(t!("Second button"));
         pick(ui, "key2", &mut g.key2, &keys, 200.0);
         ui.end_row();
-        ui.label("Как включается");
+        ui.label(t!("Activation mode"));
         pick(ui, "enable", &mut g.enable, &gyro::ENABLE, 200.0);
         ui.end_row();
-        ui.label("Чувствительность");
+        ui.label(t!("Sensitivity"));
         ui.add(egui::Slider::new(&mut g.sensitivity, 0..=100));
         ui.end_row();
-        ui.label("Мёртвая зона");
+        ui.label(t!("Dead zone"));
         ui.add(egui::Slider::new(&mut g.dead_zone, 0..=100));
         ui.end_row();
     });
     if g.target != 0 && g.key == gyro::NO_KEY && g.key2 == gyro::NO_KEY {
-        ui.colored_label(ui.visuals().warn_fg_color, "Без кнопки включения гироскоп не заработает.");
+        ui.colored_label(ui.visuals().warn_fg_color, t!("Without an activation button the gyro will not work."));
     }
     if g != old {
         gyro::set(&mut m.map, g);
@@ -629,22 +651,22 @@ fn vibration_editor(ui: &mut egui::Ui, m: &mut Mapping) {
     let mut v = old;
     let pct = |b: u8| (b as u32 * 100 / 255) as u8;
     let byte = |p: u8| (p as u32 * 255 / 100) as u8;
-    ui.heading("Рукоятки");
-    ui.checkbox(&mut v.grip_on, "Вибрация рукояток");
-    ui.add_enabled(v.grip_on, egui::Slider::new(&mut v.grip_strength, 1..=100).text("сила, % (50 = как у Xbox)"));
+    ui.heading(t!("Grips"));
+    ui.checkbox(&mut v.grip_on, t!("Grip vibration"));
+    ui.add_enabled(v.grip_on, egui::Slider::new(&mut v.grip_strength, 1..=100).text(t!("strength, % (50 = like Xbox)")));
     ui.add_space(12.0);
-    ui.heading("Триггеры");
-    ui.checkbox(&mut v.trig_on, "Вибрация триггеров");
+    ui.heading(t!("Triggers"));
+    ui.checkbox(&mut v.trig_on, t!("Trigger vibration"));
     ui.add_enabled_ui(v.trig_on, |ui| {
-        ui.add(egui::Slider::new(&mut v.trig_strength, 1..=100).text("сила, %"));
-        ui.add(egui::Slider::new(&mut v.trig_threshold, 0..=100).text("порог: слабее него триггер молчит"));
+        ui.add(egui::Slider::new(&mut v.trig_strength, 1..=100).text(t!("strength, %")));
+        ui.add(egui::Slider::new(&mut v.trig_threshold, 0..=100).text(t!("threshold: weaker signals stay silent")));
         for (side, name) in trigger::SIDES.iter().enumerate() {
             let (lo, hi) = v.trig_window[side];
             let (mut a, mut b) = (pct(lo), pct(hi));
             ui.horizontal(|ui| {
                 ui.strong(*name);
-                ui.add(egui::Slider::new(&mut a, 0..=b).text("мин. амплитуда, %"));
-                ui.add(egui::Slider::new(&mut b, a..=100).text("макс. амплитуда, %"));
+                ui.add(egui::Slider::new(&mut a, 0..=b).text(t!("min. amplitude, %")));
+                ui.add(egui::Slider::new(&mut b, a..=100).text(t!("max. amplitude, %")));
             });
             // Untouched values keep their exact bytes, the percent view rounds them.
             if (a, b) != (pct(lo), pct(hi)) {
@@ -656,7 +678,7 @@ fn vibration_editor(ui: &mut egui::Ui, m: &mut Mapping) {
         vibration::set(&mut m.map, v);
     }
     ui.add_space(8.0);
-    if ui.button("Проверить вибрацию (1 секунда)").on_hover_text("Сила и окна применяются после записи на геймпад").clicked() {
+    if ui.button(t!("Test vibration (1 second)")).on_hover_text(t!("Strength and ranges apply after writing to the gamepad")).clicked() {
         m.test_vibration = true;
     }
 }
@@ -665,12 +687,12 @@ fn lighting_editor(ui: &mut egui::Ui, m: &mut Mapping) {
     let mut effect = m.rgb[rgb::MODE];
     let old_colors = m.colors.clone();
     ui.horizontal(|ui| {
-        ui.label("Эффект");
+        ui.label(t!("Effect"));
         pick(ui, "effect", &mut effect, &rgb::EFFECTS, 170.0);
     });
     if ![0, 6].contains(&effect) {
         ui.horizontal(|ui| {
-            ui.label("Цвета");
+            ui.label(t!("Colors"));
             let (mut drop, many) = (None, m.colors.len() > 1);
             for (i, c) in m.colors.iter_mut().enumerate() {
                 ui.color_edit_button_srgb(c);
@@ -681,7 +703,7 @@ fn lighting_editor(ui: &mut egui::Ui, m: &mut Mapping) {
             if let Some(i) = drop {
                 m.colors.remove(i);
             }
-            if m.colors.len() < rgb::MAX_COLORS && ui.button("+ цвет").clicked() {
+            if m.colors.len() < rgb::MAX_COLORS && ui.button(t!("+ color")).clicked() {
                 m.colors.push([255, 255, 255]);
             }
         });
@@ -689,14 +711,14 @@ fn lighting_editor(ui: &mut egui::Ui, m: &mut Mapping) {
     if effect != m.rgb[rgb::MODE] || m.colors != old_colors {
         rgb::apply(&mut m.rgb, effect, &m.colors);
     }
-    ui.add(egui::Slider::new(&mut m.rgb[rgb::BRIGHTNESS], 0..=100).text("яркость, %"));
-    ui.add(egui::Slider::new(&mut m.rgb[rgb::PERIOD], 1..=30).text("время цикла (больше = медленнее)"));
+    ui.add(egui::Slider::new(&mut m.rgb[rgb::BRIGHTNESS], 0..=100).text(t!("brightness, %")));
+    ui.add(egui::Slider::new(&mut m.rgb[rgb::PERIOD], 1..=30).text(t!("cycle time (higher = slower)")));
     let mut sync = m.rgb[rgb::GRIP_SYNC] != 0;
-    if ui.checkbox(&mut sync, "Подсветка реагирует на вибрацию").changed() {
+    if ui.checkbox(&mut sync, t!("Lighting reacts to vibration")).changed() {
         m.rgb[rgb::GRIP_SYNC] = sync as u8;
     }
     ui.add_space(8.0);
-    ui.label("Кадры анимации, которые проигрывает геймпад (сверху вниз):");
+    ui.label(t!("Animation frames the gamepad plays (top to bottom):"));
     let (leds, frames) = (rgb::leds(&m.rgb), rgb::frames(&m.rgb));
     let cell = 16.0;
     let (rect, _) = ui.allocate_exact_size(Vec2::new(cell * leds as f32, cell * frames as f32), egui::Sense::hover());
@@ -722,17 +744,17 @@ fn curve_plot(ui: &mut egui::Ui, bank: &[u8; 9]) {
 
 fn keys_grid(ui: &mut egui::Ui, m: &mut Mapping) {
     egui::Grid::new("remap").num_columns(4).spacing([16.0, 6.0]).show(ui, |ui| {
-        ui.weak("Кнопка");
-        ui.weak("Нажимает");
-        ui.weak("Турбо");
-        ui.weak("Нажатий в секунду");
+        ui.weak(t!("Button"));
+        ui.weak(t!("Presses"));
+        ui.weak(t!("Turbo"));
+        ui.weak(t!("Presses per second"));
         ui.end_row();
         for (id, name) in map::KEYS {
             let mut k = map::key(&m.map, id);
             let changed = k != map::key(&m.device.map, id);
             ui.label(if changed { egui::RichText::new(name).strong() } else { egui::RichText::new(name) });
             if m.macros.iter().any(|mc| mc.key == id) {
-                ui.label("Макрос");
+                ui.label(t!("Macro"));
                 ui.end_row();
                 continue;
             }
@@ -754,15 +776,15 @@ fn macros_editor(ui: &mut egui::Ui, m: &mut Mapping) {
         ui.push_id(i, |ui| {
             egui::Frame::group(ui.style()).show(ui, |ui| {
                 ui.horizontal(|ui| {
-                    ui.label("Кнопка");
+                    ui.label(t!("Button"));
                     pick(ui, "key", &mut mc.key, &map::KEYS, 70.0);
-                    ui.label("Режим");
+                    ui.label(t!("Mode"));
                     pick(ui, "kind", &mut mc.kind, &macros::KINDS, 150.0);
                     if mc.kind != 1 {
-                        ui.label("Пауза между повторами, мс");
+                        ui.label(t!("Pause between repeats, ms"));
                         ui.add(egui::DragValue::new(&mut mc.interval_ms).range(0..=10_000));
                     }
-                    if ui.button("Удалить макрос").clicked() {
+                    if ui.button(t!("Delete macro")).clicked() {
                         remove = Some(i);
                     }
                 });
@@ -770,7 +792,7 @@ fn macros_editor(ui: &mut egui::Ui, m: &mut Mapping) {
                 egui::Grid::new("steps").num_columns(4).spacing([12.0, 4.0]).show(ui, |ui| {
                     for (j, st) in mc.steps.iter_mut().enumerate() {
                         ui.push_id(j, |ui| {
-                            ui.add(egui::DragValue::new(&mut st.delay_ms).range(0..=10_000).suffix(" мс"));
+                            ui.add(egui::DragValue::new(&mut st.delay_ms).range(0..=10_000).suffix(t!(" ms")));
                             let was_stick = macros::is_stick(st.event);
                             pick(ui, "ev", &mut st.event, &macros::EVENTS, 110.0);
                             if was_stick != macros::is_stick(st.event) {
@@ -791,7 +813,7 @@ fn macros_editor(ui: &mut egui::Ui, m: &mut Mapping) {
                 if let Some(j) = drop {
                     mc.steps.remove(j);
                 }
-                if ui.button("+ нажатие кнопки").clicked() {
+                if ui.button(t!("+ button press")).clicked() {
                     mc.steps.push(Step { delay_ms: 30, key: 4, event: 1 });
                     mc.steps.push(Step { delay_ms: 50, key: 4, event: 0 });
                 }
@@ -802,7 +824,7 @@ fn macros_editor(ui: &mut egui::Ui, m: &mut Mapping) {
         m.macros.remove(i);
     }
     let free = map::KEYS.iter().rev().map(|k| k.0).find(|k| m.macros.iter().all(|mc| mc.key != *k));
-    if m.macros.len() < macros::MAX && ui.button("+ Добавить макрос").clicked() {
+    if m.macros.len() < macros::MAX && ui.button(t!("+ Add macro")).clicked() {
         let steps = vec![Step { delay_ms: 0, key: 4, event: 1 }, Step { delay_ms: 50, key: 4, event: 0 }];
         m.macros.push(Macro { key: free.unwrap_or(18), kind: 1, interval_ms: 0, steps });
     }
@@ -826,7 +848,7 @@ impl eframe::App for App {
     fn ui(&mut self, ui: &mut egui::Ui, _frame: &mut eframe::Frame) {
         if self.dev.as_ref().is_some_and(|d| !d.is_alive()) {
             self.dev = None;
-            self.error = "Геймпад отключён".into();
+            self.error = t!("Gamepad disconnected").into();
         }
         if self.last_poll.elapsed() > Duration::from_secs(if self.dev.is_some() { 10 } else { 2 }) {
             if self.dev.is_some() {
@@ -836,7 +858,7 @@ impl eframe::App for App {
                     None => {
                         // Reconnecting picks whichever pad answers, so a hung one is let go.
                         self.dev = None;
-                        self.error = "Геймпад перестал отвечать, переподключаюсь".into();
+                        self.error = t!("The gamepad stopped answering, reconnecting").into();
                     }
                 }
             } else {
@@ -859,14 +881,14 @@ impl eframe::App for App {
             ui.heading("OrbitStation");
             ui.add_space(8.0);
             for (t, name) in [
-                (Tab::Device, "Устройство"),
-                (Tab::Test, "Тест кнопок"),
-                (Tab::Remap, "Переназначение"),
-                (Tab::Sticks, "Стики"),
-                (Tab::Gyro, "Гироскоп"),
-                (Tab::Vibration, "Вибрация"),
-                (Tab::Lighting, "Подсветка"),
-                (Tab::Settings, "Настройки"),
+                (Tab::Device, t!("Device")),
+                (Tab::Test, t!("Button test")),
+                (Tab::Remap, t!("Remapping")),
+                (Tab::Sticks, t!("Sticks")),
+                (Tab::Gyro, t!("Gyro")),
+                (Tab::Vibration, t!("Vibration")),
+                (Tab::Lighting, t!("Lighting")),
+                (Tab::Settings, t!("Settings")),
             ] {
                 ui.selectable_value(&mut self.tab, t, name);
             }
@@ -875,8 +897,8 @@ impl eframe::App for App {
             ui.label(if self.dev.is_some() { &self.note } else { &self.error });
         });
         egui::CentralPanel::default_margins().show(ui, |ui| {
-            if self.dev.is_none() {
-                ui.heading("Ожидание геймпада…");
+            if self.dev.is_none() && self.tab != Tab::Settings {
+                ui.heading(t!("Waiting for the gamepad…"));
                 ui.label(&self.error);
                 return;
             }
@@ -902,6 +924,7 @@ impl eframe::App for App {
 }
 
 fn main() -> eframe::Result {
+    i18n::set(i18n::load());
     let options = eframe::NativeOptions {
         viewport: egui::ViewportBuilder::default()
             .with_inner_size([760.0, 560.0])

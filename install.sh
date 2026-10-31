@@ -16,8 +16,11 @@ DESKTOP=$PREFIX/share/applications/orbitstation.desktop
 ICONS=$PREFIX/share/icons/hicolor
 ICON_SIZES="16 24 32 48 64 128 256"
 
-say() { printf '%s\n' "$*"; }
-die() { printf 'Ошибка: %s\n' "$*" >&2; exit 1; }
+# English unless the desktop runs in Russian, like the app itself
+case "${LANGUAGE:-${LC_ALL:-${LC_MESSAGES:-${LANG:-}}}}" in ru*) RU=1 ;; *) RU= ;; esac
+# say "English" "Русский"
+say() { if [ -n "$RU" ]; then printf '%s\n' "$2"; else printf '%s\n' "$1"; fi; }
+die() { say "Error: $1" "Ошибка: $2" >&2; exit 1; }
 have() { command -v "$1" >/dev/null 2>&1; }
 
 # sudo or doas for the one root step, empty when neither exists
@@ -38,16 +41,17 @@ uninstall() {
     rm -f "$BIN" "$DESKTOP" "$ICONS/scalable/apps/orbitstation.svg"
     for s in $ICON_SIZES; do rm -f "$ICONS/${s}x$s/apps/orbitstation.png"; done
     have gtk-update-icon-cache && gtk-update-icon-cache -q -t "$ICONS" 2>/dev/null || true
-    say "Программа удалена из $PREFIX."
+    say "Removed the program from $PREFIX." "Программа удалена из $PREFIX."
     if [ -f "$RULE" ]; then
         if as_root rm -f "$RULE"; then
             as_root udevadm control --reload 2>/dev/null || true
-            say "Правило udev удалено."
+            say "Removed the udev rule." "Правило udev удалено."
         else
-            say "Удали правило udev вручную: $RULE"
+            say "Remove the udev rule by hand: $RULE" "Удали правило udev вручную: $RULE"
         fi
     fi
-    say "Профили и копии остались в ${XDG_DATA_HOME:-$HOME/.local/share}/orbitstation, удали их сам, если не нужны."
+    say "Profiles and backups stay in ${XDG_DATA_HOME:-$HOME/.local/share}/orbitstation, delete them yourself if you do not need them." \
+        "Профили и копии остались в ${XDG_DATA_HOME:-$HOME/.local/share}/orbitstation, удали их сам, если не нужны."
 }
 
 NO_UDEV=
@@ -55,15 +59,18 @@ case "${1:-}" in
     "") ;;
     --no-udev) NO_UDEV=1 ;;
     --uninstall) uninstall; exit 0 ;;
-    *) die "неизвестный параметр $1, есть --no-udev и --uninstall" ;;
+    *) die "unknown option $1, there are --no-udev and --uninstall" "неизвестный параметр $1, есть --no-udev и --uninstall" ;;
 esac
 
-[ "$(id -u)" -ne 0 ] || die "запусти без sudo, от своего пользователя: программа ставится в домашнюю папку"
+[ "$(id -u)" -ne 0 ] || die "run it without sudo, as your own user: the program goes into your home folder" \
+    "запусти без sudo, от своего пользователя: программа ставится в домашнюю папку"
 
-have cargo || die "нужен Rust. Установи его так: curl --proto '=https' --tlsv1.2 -sSf https://sh.rustup.rs | sh"
+have cargo || die "Rust is needed. Install it with: curl --proto '=https' --tlsv1.2 -sSf https://sh.rustup.rs | sh" \
+    "нужен Rust. Установи его так: curl --proto '=https' --tlsv1.2 -sSf https://sh.rustup.rs | sh"
 rust=$(rustc --version | cut -d' ' -f2)
-version_ok "$rust" || die "нужен Rust $RUST_MIN или новее, сейчас $rust. Обнови: rustup update"
-have cc || die "нужен компилятор C для сборки (пакет gcc или clang)"
+version_ok "$rust" || die "Rust $RUST_MIN or newer is needed, this is $rust. Update it: rustup update" \
+    "нужен Rust $RUST_MIN или новее, сейчас $rust. Обнови: rustup update"
+have cc || die "a C compiler is needed to build (the gcc or clang package)" "нужен компилятор C для сборки (пакет gcc или clang)"
 
 # `sh install.sh` builds the checkout it sits in; piped (`curl | sh`, $0 is the shell) it always
 # takes GitHub, so a project folder that happens to be the current directory is never picked up.
@@ -73,14 +80,14 @@ case "$0" in
 esac
 if [ -n "$here" ] && grep -qs '^name = "orbitstation"' "$here/Cargo.toml"; then
     SRC=$here
-    say "Собираю из $SRC"
+    say "Building from $SRC" "Собираю из $SRC"
 else
-    have git || die "нужен git"
+    have git || die "git is needed" "нужен git"
     if [ -d "$SRC/.git" ]; then
-        say "Обновляю исходники в $SRC"
+        say "Updating the sources in $SRC" "Обновляю исходники в $SRC"
         git -C "$SRC" pull --ff-only
     else
-        say "Скачиваю исходники в $SRC"
+        say "Downloading the sources to $SRC" "Скачиваю исходники в $SRC"
         mkdir -p "$(dirname "$SRC")"
         git clone --depth 1 "$REPO" "$SRC"
     fi
@@ -100,6 +107,7 @@ cat > "$DESKTOP" <<EOF
 Type=Application
 Name=OrbitStation
 Comment=Flydigi controller settings
+Comment[ru]=Настройки геймпадов Flydigi
 Exec=$BIN
 Icon=orbitstation
 StartupWMClass=orbitstation
@@ -116,21 +124,25 @@ have gtk-update-icon-cache && gtk-update-icon-cache -q -t "$ICONS" 2>/dev/null |
 have update-desktop-database && update-desktop-database "$PREFIX/share/applications" 2>/dev/null || true
 
 if [ -z "$NO_UDEV" ] && ! cmp -s "$SRC/70-orbitstation.rules" "$RULE"; then
-    say "Нужен доступ к геймпаду: ставлю правило udev в $RULE (спросит пароль)"
+    say "The gamepad needs access: installing the udev rule to $RULE (asks for a password)" \
+        "Нужен доступ к геймпаду: ставлю правило udev в $RULE (спросит пароль)"
     if as_root install -m 644 "$SRC/70-orbitstation.rules" "$RULE"; then
         as_root udevadm control --reload
         as_root udevadm trigger --subsystem-match=hidraw
-        say "Правило udev установлено. Если геймпад был подключён, переподключи его."
+        say "The udev rule is installed. If the gamepad was connected, reconnect it." \
+            "Правило udev установлено. Если геймпад был подключён, переподключи его."
     else
-        say "Не получилось без root. Выполни сам: sudo install -m 644 $SRC/70-orbitstation.rules $RULE"
+        say "Could not do it without root. Run it yourself: sudo install -m 644 $SRC/70-orbitstation.rules $RULE" \
+            "Не получилось без root. Выполни сам: sudo install -m 644 $SRC/70-orbitstation.rules $RULE"
     fi
 fi
 
-if [ -z "$old" ]; then say "Установлено: $BIN"
-elif [ "$old" = "$(cksum < "$BIN")" ]; then say "Уже последняя версия: $BIN"
-else say "Обновлено: $BIN"
+if [ -z "$old" ]; then say "Installed: $BIN" "Установлено: $BIN"
+elif [ "$old" = "$(cksum < "$BIN")" ]; then say "Already the latest version: $BIN" "Уже последняя версия: $BIN"
+else say "Updated: $BIN" "Обновлено: $BIN"
 fi
 case ":$PATH:" in
     *":$PREFIX/bin:"*) ;;
-    *) say "Папки $PREFIX/bin нет в PATH: запускай из меню приложений или по полному пути." ;;
+    *) say "$PREFIX/bin is not in PATH: start it from the app menu or by its full path." \
+        "Папки $PREFIX/bin нет в PATH: запускай из меню приложений или по полному пути." ;;
 esac
