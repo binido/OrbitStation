@@ -1,8 +1,8 @@
 use crate::proto::{self, PKT, cmd, map};
-use std::fs::{self, File, OpenOptions};
+use std::fs::{self, OpenOptions};
 use std::io::{Read, Write};
 use std::path::PathBuf;
-use std::sync::mpsc::{self, Receiver};
+use std::sync::mpsc::{self, Receiver, SyncSender};
 use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::{Arc, Mutex};
 use std::thread;
@@ -12,32 +12,51 @@ const HID_ID: &str = "HID_ID=0003:000037D7:00002401";
 /// Vendor config interface, the one with `5a a5` commands.
 const CONFIG_IFACE: &str = "input1";
 
-pub fn find_hidraw() -> Option<PathBuf> {
-    let mut found: Vec<_> = fs::read_dir("/sys/class/hidraw").ok()?.flatten().collect();
-    found.sort_by_key(|e| e.file_name());
-    found.into_iter().find_map(|e| {
-        let uevent = fs::read_to_string(e.path().join("device/uevent")).ok()?;
-        let phys = uevent.lines().find_map(|l| l.strip_prefix("HID_PHYS="))?;
-        (uevent.lines().any(|l| l == HID_ID) && phys.ends_with(CONFIG_IFACE))
-            .then(|| PathBuf::from("/dev").join(e.file_name()))
-    })
+/// Config interfaces of every connected Vader 5 Pro. A receiver or a second pad has the same id.
+pub fn find_hidraw() -> Vec<PathBuf> {
+    let Ok(dir) = fs::read_dir("/sys/class/hidraw") else { return vec![] };
+    dir.flatten()
+        .filter_map(|e| {
+            let uevent = fs::read_to_string(e.path().join("device/uevent")).ok()?;
+            let phys = uevent.lines().find_map(|l| l.strip_prefix("HID_PHYS="))?;
+            (uevent.lines().any(|l| l == HID_ID) && phys.ends_with(CONFIG_IFACE))
+                .then(|| PathBuf::from("/dev").join(e.file_name()))
+        })
+        .collect()
 }
 
 pub struct Device {
     pub path: PathBuf,
-    writer: File,
+    writer: SyncSender<[u8; PKT + 1]>,
     replies: Receiver<[u8; PKT]>,
     pub input: Arc<Mutex<Option<proto::Input>>>,
     alive: Arc<AtomicBool>,
 }
 
 impl Device {
+    /// Opens the first pad that answers a heartbeat.
     pub fn open() -> Result<Device, String> {
-        let path = find_hidraw().ok_or("Геймпад Vader 5 Pro не найден (подключи его кабелем)")?;
-        let writer = OpenOptions::new().read(true).write(true).open(&path).map_err(|e| {
+        let found = find_hidraw();
+        if found.is_empty() {
+            return Err("Геймпад Vader 5 Pro не найден (подключи его кабелем)".into());
+        }
+        let mut err = String::new();
+        for path in found {
+            match Device::open_path(path) {
+                Ok(d) if d.send(&proto::request(cmd::HEARTBEAT, &[])).is_some()
+                    && d.reply(cmd::HEARTBEAT, Duration::from_millis(300)).is_some() => return Ok(d),
+                Ok(d) => err = format!("{} не отвечает, переподключи геймпад", d.path.display()),
+                Err(e) => err = e,
+            }
+        }
+        Err(err)
+    }
+
+    fn open_path(path: PathBuf) -> Result<Device, String> {
+        let file = OpenOptions::new().read(true).write(true).open(&path).map_err(|e| {
             format!("Нет доступа к {}: {e}. Установи udev-правило из README.", path.display())
         })?;
-        let mut reader = writer.try_clone().map_err(|e| e.to_string())?;
+        let mut reader = file.try_clone().map_err(|e| e.to_string())?;
         let (tx, replies) = mpsc::channel();
         let input = Arc::new(Mutex::new(None));
         let alive = Arc::new(AtomicBool::new(true));
@@ -53,6 +72,17 @@ impl Device {
             }
             alive2.store(false, Ordering::Relaxed);
         });
+        // A pad that stops answering keeps a USB write waiting in the kernel, so writes run here
+        // and the caller only waits for the reply timeout.
+        let (writer, packets) = mpsc::sync_channel::<[u8; PKT + 1]>(4);
+        let mut file = file;
+        thread::spawn(move || {
+            while let Ok(out) = packets.recv() {
+                if file.write_all(&out).is_err() {
+                    break;
+                }
+            }
+        });
         Ok(Device { path, writer, replies, input, alive })
     }
 
@@ -65,12 +95,12 @@ impl Device {
         self.call_wait(pkt, Duration::from_millis(500))
     }
 
-    fn send(&mut self, pkt: &[u8; PKT]) -> Option<()> {
+    fn send(&self, pkt: &[u8; PKT]) -> Option<()> {
         while self.replies.try_recv().is_ok() {}
         // hidraw needs a leading report id, this interface has none so it is 0.
         let mut out = [0u8; PKT + 1];
         out[1..].copy_from_slice(pkt);
-        self.writer.write_all(&out).ok()
+        self.writer.try_send(out).ok()
     }
 
     fn reply(&self, cmd: u8, wait: Duration) -> Option<[u8; PKT]> {

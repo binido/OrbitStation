@@ -831,8 +831,13 @@ impl eframe::App for App {
         if self.last_poll.elapsed() > Duration::from_secs(if self.dev.is_some() { 10 } else { 2 }) {
             if self.dev.is_some() {
                 self.last_poll = Instant::now();
-                if let Some(r) = self.call(proto::request(cmd::HEARTBEAT, &[])) {
-                    self.info = Some(proto::parse_heartbeat(&r));
+                match self.call(proto::request(cmd::HEARTBEAT, &[])) {
+                    Some(r) => self.info = Some(proto::parse_heartbeat(&r)),
+                    None => {
+                        // Reconnecting picks whichever pad answers, so a hung one is let go.
+                        self.dev = None;
+                        self.error = "Геймпад перестал отвечать, переподключаюсь".into();
+                    }
                 }
             } else {
                 self.connect();
