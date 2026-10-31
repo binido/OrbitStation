@@ -71,6 +71,29 @@ Reply: `5a a5 CMD TOTAL INDEX DATA..`. Data starts at byte 5, or at byte 4 in th
 3-10 sticks LX LY RX RY (i16 LE), 11-14 buttons, 15-16 triggers, 17-22 gyro, 23-28 accel (4096 = 1 g).
 Button bits: `↑ ↓ ← → A B Select X | Y Start LB RB - - L3 R3 | C Z M1 M2 M3 M4 LM RM | O - - Home`.
 
+## Profile mapping blob
+
+840 bytes, read with `a3 [profile, 20]` as 42 packets (`total`, `index`, `profile`, 20 data bytes).
+Reading switches the pad to that profile. Writing: `a4 [profile, first, count, 20]`, then
+`a5 [n, 20 bytes]` for each packet of the span (`n` counts from 0), then `a6 [version lo, hi]`
+commits the running profile to flash (up to 10 s). Verified on hardware.
+
+| Offset | Size | Meaning |
+|---|---|---|
+| 0 | 2 | proto version, LE (`0x0302` on Vader 5 Pro) |
+| 13 | 32 x 3 | key table, indexed by key id: target, turbo type, turbo frequency |
+| 109 | 14 | stick curves |
+| 123 | 14 | trigger curves |
+| 137 | 8 | gyro to stick |
+| 145 | 9 | grip vibration |
+| 225 | 2 | change tag, LE, `ffff` = never written |
+| 770 | 20 | title, UTF-16 |
+
+Key target `ff` keeps the button as is, `20` runs a macro, `fe` keyboard/mouse.
+Key ids: 0 ↑, 1 →, 2 ↓, 3 ←, 4 A, 5 B, 6 Select, 7 X, 8 Y, 9 Start, 10 LB, 11 RB, 12 LT, 13 RT,
+14 L3, 15 R3, 16 C, 17 Z, 18-21 M1-M4, 22 LM, 23 RM, 24 Fn, 25 Turbo, 27 Home.
+Fuller layout: [openflydigi](https://github.com/mkaliaha/openflydigi) `docs/findings-profile-blob.md`.
+
 ## Reproducing
 
 ```bash
