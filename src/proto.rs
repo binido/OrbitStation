@@ -16,7 +16,66 @@ pub mod cmd {
     pub const SLEEP_TIME: u8 = 0x17;
     pub const PROFILE_INFO: u8 = 0xa1;
     pub const APPLY_PROFILE: u8 = 0xa2;
+    pub const MAP_READ: u8 = 0xa3;
+    pub const MAP_WRITE_START: u8 = 0xa4;
+    pub const MAP_WRITE_PACK: u8 = 0xa5;
+    pub const MAP_SAVE: u8 = 0xa6;
     pub const EXT_INPUT: u8 = 0xef;
+}
+
+/// Profile mapping blob: 42 packets of 20 bytes, layout from MappingConfigParserV30.
+pub mod map {
+    pub const PKG: usize = 20;
+    pub const SIZE: usize = 840;
+    const OFF_KEYS: usize = 13;
+    const OFF_VERSION: usize = 225;
+    /// Key table target meaning "the button does what it says on the shell".
+    pub const IDENTITY: u8 = 255;
+
+    /// Remappable Vader 5 Pro buttons, ids from the renderer's device_config_f5.
+    pub const KEYS: [(u8, &str); 25] = [
+        (4, "A"), (5, "B"), (7, "X"), (8, "Y"),
+        (0, "↑"), (2, "↓"), (3, "←"), (1, "→"),
+        (10, "LB"), (11, "RB"), (12, "LT"), (13, "RT"),
+        (16, "C"), (17, "Z"), (14, "L3"), (15, "R3"),
+        (6, "Select"), (9, "Start"), (27, "Home"),
+        (18, "M1"), (19, "M2"), (20, "M3"), (21, "M4"), (22, "LM"), (23, "RM"),
+    ];
+
+    /// What a button may send: only XInput buttons, the extra ones are invisible to the host.
+    pub const TARGETS: [(u8, &str); 18] = [
+        (IDENTITY, "По умолчанию"),
+        (4, "A"), (5, "B"), (7, "X"), (8, "Y"),
+        (0, "↑"), (2, "↓"), (3, "←"), (1, "→"),
+        (10, "LB"), (11, "RB"), (12, "LT"), (13, "RT"),
+        (14, "L3"), (15, "R3"), (6, "Select"), (9, "Start"), (27, "Home"),
+    ];
+
+    pub fn target(blob: &[u8], key: u8) -> u8 {
+        blob[OFF_KEYS + key as usize * 3]
+    }
+
+    /// Only the target byte changes, turbo settings of the key stay as they are.
+    pub fn set_target(blob: &mut [u8], key: u8, target: u8) {
+        blob[OFF_KEYS + key as usize * 3] = target;
+    }
+
+    /// Change tag other apps compare to detect an edited slot, 0xffff means never written.
+    pub fn version(blob: &[u8]) -> u16 {
+        u16::from_le_bytes([blob[OFF_VERSION], blob[OFF_VERSION + 1]])
+    }
+
+    pub fn set_version(blob: &mut [u8], v: u16) {
+        blob[OFF_VERSION..OFF_VERSION + 2].copy_from_slice(&v.to_le_bytes());
+    }
+
+    /// First changed packet and how many follow it, the official app also resends only the changed span.
+    pub fn changed_span(old: &[u8], new: &[u8]) -> Option<(usize, usize)> {
+        let differs = |i: usize| old[i * PKG..(i + 1) * PKG] != new[i * PKG..(i + 1) * PKG];
+        let first = (0..SIZE / PKG).find(|&i| differs(i))?;
+        let last = (0..SIZE / PKG).rev().find(|&i| differs(i))?;
+        Some((first, last - first + 1))
+    }
 }
 
 pub fn request(cmd: u8, payload: &[u8]) -> [u8; PKT] {
@@ -248,5 +307,18 @@ mod tests {
         let inp = parse_input(&hex("5a a5 ef 00 00 00 00 00 00 00 00 00 00 00 00 00 00 01 00 04 00 03 00 22 00 f1 ff 0a 10 00 00 23")).unwrap();
         assert_eq!(inp.accel, [0x22, -15, 4106]);
         assert_eq!(inp.gyro, [1, 4, 3]);
+    }
+
+    #[test]
+    fn remaps_a_key_in_the_profile_blob() {
+        let old = vec![map::IDENTITY; map::SIZE];
+        let mut new = old.clone();
+        assert_eq!(map::target(&new, 18), map::IDENTITY);
+        map::set_target(&mut new, 18, 4);
+        map::set_version(&mut new, 0x0840);
+        // M1 sits at byte 13 + 18 * 3 = 67 (packet 3), the version at 225 (packet 11)
+        assert_eq!((new[67], new[225], new[226]), (4, 0x40, 0x08));
+        assert_eq!(map::changed_span(&old, &new), Some((3, 9)));
+        assert_eq!(map::changed_span(&old, &old), None);
     }
 }

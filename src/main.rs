@@ -3,14 +3,23 @@ mod proto;
 
 use device::Device;
 use eframe::egui::{self, Color32, Pos2, Stroke, Vec2};
-use proto::{DeviceInfo, HwStatus, Toggle, cmd};
-use std::time::{Duration, Instant};
+use proto::{DeviceInfo, HwStatus, Toggle, cmd, map};
+use std::path::PathBuf;
+use std::time::{Duration, Instant, SystemTime, UNIX_EPOCH};
 
 #[derive(PartialEq, Clone, Copy)]
 enum Tab {
     Device,
     Test,
+    Remap,
     Settings,
+}
+
+/// Profile mapping as read from the pad and as edited in the window.
+struct Mapping {
+    cfg: u8,
+    device: Vec<u8>,
+    edited: Vec<u8>,
 }
 
 struct App {
@@ -23,6 +32,7 @@ struct App {
     tab: Tab,
     test_mode: bool,
     vibration: [u8; 2],
+    mapping: Option<Mapping>,
     note: String,
 }
 
@@ -38,6 +48,7 @@ impl App {
             tab: Tab::Device,
             test_mode: false,
             vibration: [0, 0],
+            mapping: None,
             note: String::new(),
         };
         app.connect();
@@ -123,6 +134,7 @@ impl App {
             for p in 0..4u8 {
                 if ui.selectable_label(self.profile == p, format!("Профиль {}", p + 1)).clicked() && self.profile != p {
                     self.profile = p;
+                    self.mapping = None;
                     self.apply(proto::request(cmd::APPLY_PROFILE, &[p]), &format!("профиль {}", p + 1));
                 }
             }
@@ -169,6 +181,88 @@ impl App {
         }
     }
 
+    fn load_mapping(&mut self) {
+        let cfg = self.profile;
+        match self.dev.as_mut().and_then(|d| d.read_profile(cfg)) {
+            Some(blob) => {
+                self.mapping = Some(Mapping { cfg, edited: blob.clone(), device: blob });
+                self.note = format!("Раскладка профиля {} загружена", cfg + 1);
+            }
+            None => self.note = "Не удалось прочитать раскладку".into(),
+        }
+    }
+
+    fn save_mapping(&mut self) {
+        let (Some(dev), Some(m)) = (self.dev.as_mut(), self.mapping.as_mut()) else { return };
+        let backup = backup_profile(m.cfg, &m.device);
+        let version = new_version(&m.device);
+        let mut new = m.edited.clone();
+        map::set_version(&mut new, version);
+        self.note = match dev.write_profile(m.cfg, &m.device, &new, version) {
+            Err(e) => format!("Запись не удалась: {e}"),
+            Ok(()) if dev.read_profile(m.cfg).as_ref() != Some(&new) => {
+                "Записано, но проверочное чтение не совпало, загрузи раскладку заново".into()
+            }
+            Ok(()) => {
+                m.device = new.clone();
+                m.edited = new;
+                match backup {
+                    Ok(path) => format!("Раскладка сохранена, прежняя копия: {}", path.display()),
+                    Err(e) => format!("Раскладка сохранена, но копию сделать не удалось: {e}"),
+                }
+            }
+        };
+    }
+
+    fn remap_tab(&mut self, ui: &mut egui::Ui) {
+        if self.mapping.as_ref().is_none_or(|m| m.cfg != self.profile) {
+            ui.label(format!("Раскладка профиля {} ещё не загружена.", self.profile + 1));
+            if ui.button("Загрузить с геймпада").clicked() {
+                self.load_mapping();
+            }
+            return;
+        }
+        let m = self.mapping.as_mut().unwrap();
+        ui.label(format!("Профиль {}. Кнопка слева будет нажимать то, что выбрано справа.", m.cfg + 1));
+        ui.add_space(8.0);
+        egui::Grid::new("remap").num_columns(4).spacing([16.0, 6.0]).show(ui, |ui| {
+            for (i, (key, name)) in map::KEYS.iter().enumerate() {
+                let mut target = map::target(&m.edited, *key);
+                let label = map::TARGETS.iter().find(|t| t.0 == target).map_or("Своё значение", |t| t.1);
+                let changed = target != map::target(&m.device, *key);
+                ui.label(if changed { egui::RichText::new(*name).strong() } else { egui::RichText::new(*name) });
+                egui::ComboBox::from_id_salt(key).selected_text(label).width(130.0).show_ui(ui, |ui| {
+                    for (v, n) in map::TARGETS {
+                        ui.selectable_value(&mut target, v, n);
+                    }
+                });
+                map::set_target(&mut m.edited, *key, target);
+                if i % 2 == 1 {
+                    ui.end_row();
+                }
+            }
+        });
+        ui.add_space(12.0);
+        let dirty = m.edited != m.device;
+        ui.horizontal(|ui| {
+            if ui.add_enabled(dirty, egui::Button::new("Записать на геймпад")).clicked() {
+                self.save_mapping();
+            }
+            let m = self.mapping.as_mut().unwrap();
+            if ui.add_enabled(dirty, egui::Button::new("Отменить изменения")).clicked() {
+                m.edited = m.device.clone();
+            }
+            if ui.button("Все по умолчанию").clicked() {
+                for (key, _) in map::KEYS {
+                    map::set_target(&mut m.edited, key, map::IDENTITY);
+                }
+            }
+            if ui.button("Перечитать").clicked() {
+                self.load_mapping();
+            }
+        });
+    }
+
     fn settings_tab(&mut self, ui: &mut egui::Ui) {
         let Some(mut st) = self.status.clone() else {
             ui.label("Нет данных о настройках.");
@@ -210,6 +304,28 @@ impl App {
     }
 }
 
+/// Saves the profile as it was on the pad before a write, the app has no other undo for flash.
+fn backup_profile(cfg: u8, blob: &[u8]) -> std::io::Result<PathBuf> {
+    let base = std::env::var_os("XDG_DATA_HOME")
+        .map(PathBuf::from)
+        .or_else(|| std::env::var_os("HOME").map(|h| PathBuf::from(h).join(".local/share")))
+        .ok_or(std::io::ErrorKind::NotFound)?;
+    let dir = base.join("orbitstation/backups");
+    std::fs::create_dir_all(&dir)?;
+    let secs = SystemTime::now().duration_since(UNIX_EPOCH).unwrap_or_default().as_secs();
+    let path = dir.join(format!("profile{}-{secs}.bin", cfg + 1));
+    std::fs::write(&path, blob)?;
+    Ok(path)
+}
+
+/// Space Station picks a random tag that differs from the current one; 0xffff means "never written".
+fn new_version(blob: &[u8]) -> u16 {
+    let old = map::version(blob);
+    let nanos = SystemTime::now().duration_since(UNIX_EPOCH).unwrap_or_default().subsec_nanos();
+    let v = (nanos % 0xffff) as u16;
+    if v == old { (v + 1) % 0xffff } else { v }
+}
+
 fn stick(ui: &mut egui::Ui, title: &str, x: i16, y: i16, pressed: bool) {
     ui.vertical(|ui| {
         ui.label(title);
@@ -249,7 +365,12 @@ impl eframe::App for App {
             ui.add_space(8.0);
             ui.heading("OrbitStation");
             ui.add_space(8.0);
-            for (t, name) in [(Tab::Device, "Устройство"), (Tab::Test, "Тест кнопок"), (Tab::Settings, "Настройки")] {
+            for (t, name) in [
+                (Tab::Device, "Устройство"),
+                (Tab::Test, "Тест кнопок"),
+                (Tab::Remap, "Переназначение"),
+                (Tab::Settings, "Настройки"),
+            ] {
                 ui.selectable_value(&mut self.tab, t, name);
             }
         });
@@ -265,6 +386,7 @@ impl eframe::App for App {
             egui::ScrollArea::vertical().show(ui, |ui| match self.tab {
                 Tab::Device => self.device_tab(ui),
                 Tab::Test => self.test_tab(ui),
+                Tab::Remap => self.remap_tab(ui),
                 Tab::Settings => self.settings_tab(ui),
             });
         });
