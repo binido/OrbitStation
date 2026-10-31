@@ -82,8 +82,8 @@ pub fn apply(ctx: &egui::Context) -> Colors {
     let accent = gnome_accent();
     let css = gtk_css();
     let colors = Colors { dark: palette(DARK, accent, &css), light: palette(LIGHT, accent, &css) };
-    ctx.style_mut_of(Theme::Dark, |s| style(&mut s.visuals, &colors.dark));
-    ctx.style_mut_of(Theme::Light, |s| style(&mut s.visuals, &colors.light));
+    ctx.style_mut_of(Theme::Dark, |s| style(s, &colors.dark));
+    ctx.style_mut_of(Theme::Light, |s| style(s, &colors.light));
     colors
 }
 
@@ -119,14 +119,22 @@ fn mix(a: Color32, b: Color32, t: f32) -> Color32 {
     Color32::from_rgb(m(a.r(), b.r()), m(a.g(), b.g()), m(a.b(), b.b()))
 }
 
-/// Widget shades follow libadwaita: buttons are the text colour at 10%, 15% hovered, 30% pressed.
-fn style(v: &mut egui::Visuals, p: &Palette) {
+/// Widget shades follow libadwaita: buttons are the text colour at 10%, 15% hovered, 30% pressed,
+/// see-through so they read the same on the window and on cards.
+fn style(style: &mut egui::Style, p: &Palette) {
+    let sp = &mut style.spacing;
+    sp.item_spacing = egui::vec2(10.0, 10.0);
+    sp.button_padding = egui::vec2(12.0, 6.0);
+    sp.interact_size.y = 28.0;
+    sp.combo_height = 320.0;
+    sp.slider_width = 180.0;
+    let v = &mut style.visuals;
     let (bg, fg) = (p.window_bg, p.window_fg);
     v.panel_fill = bg;
     v.window_fill = p.popover_bg;
     v.window_stroke = Stroke::new(1.0, mix(fg, p.popover_bg, 0.12));
     v.faint_bg_color = p.card_bg;
-    v.extreme_bg_color = mix(fg, p.view_bg, 0.08);
+    v.extreme_bg_color = fg.gamma_multiply(0.07);
     v.code_bg_color = mix(fg, bg, 0.08);
     v.hyperlink_color = p.accent;
     v.warn_fg_color = p.warning;
@@ -143,13 +151,13 @@ fn style(v: &mut egui::Visuals, p: &Palette) {
     w.noninteractive.bg_stroke = Stroke::new(1.0, mix(fg, bg, 0.15));
     w.noninteractive.fg_stroke = Stroke::new(1.0, mix(fg, bg, 0.85));
     for (s, t) in [(&mut w.inactive, 0.10), (&mut w.hovered, 0.15), (&mut w.active, 0.30), (&mut w.open, 0.15)] {
-        s.bg_fill = mix(fg, bg, t);
+        s.bg_fill = fg.gamma_multiply(t);
         s.weak_bg_fill = s.bg_fill;
         s.bg_stroke = Stroke::NONE;
         s.fg_stroke = Stroke::new(1.0, fg);
         s.corner_radius = CornerRadius::same(6);
     }
-    w.hovered.bg_stroke = Stroke::new(1.0, mix(fg, bg, 0.25));
+
     w.noninteractive.corner_radius = CornerRadius::same(6);
 }
 
