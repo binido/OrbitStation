@@ -20,6 +20,9 @@ pub mod cmd {
     pub const MAP_WRITE_START: u8 = 0xa4;
     pub const MAP_WRITE_PACK: u8 = 0xa5;
     pub const MAP_SAVE: u8 = 0xa6;
+    pub const MACRO_READ: u8 = 0xac;
+    pub const MACRO_WRITE_START: u8 = 0xad;
+    pub const MACRO_WRITE_PACK: u8 = 0xae;
     pub const EXT_INPUT: u8 = 0xef;
 }
 
@@ -31,6 +34,8 @@ pub mod map {
     const OFF_VERSION: usize = 225;
     /// Key table target meaning "the button does what it says on the shell".
     pub const IDENTITY: u8 = 255;
+    /// Key table target meaning "the button plays its macro from the macro store".
+    pub const MACRO: u8 = 32;
 
     /// Remappable Vader 5 Pro buttons, ids from the renderer's device_config_f5.
     pub const KEYS: [(u8, &str); 25] = [
@@ -51,13 +56,34 @@ pub mod map {
         (14, "L3"), (15, "R3"), (6, "Select"), (9, "Start"), (27, "Home"),
     ];
 
-    pub fn target(blob: &[u8], key: u8) -> u8 {
-        blob[OFF_KEYS + key as usize * 3]
+    /// Turbo modes, KeyMapTypeContinuousEnableType.
+    pub const TURBO: [(u8, &str); 3] = [(0, "Выкл"), (1, "Пока зажата"), (2, "Вкл/выкл нажатием")];
+    pub const TURBO_MAX_HZ: u8 = 30;
+
+    /// One key table entry: what the key sends, turbo mode and turbo presses per second.
+    #[derive(Clone, Copy, PartialEq, Debug)]
+    pub struct Key {
+        pub target: u8,
+        pub turbo: u8,
+        pub hz: u8,
     }
 
-    /// Only the target byte changes, turbo settings of the key stay as they are.
-    pub fn set_target(blob: &mut [u8], key: u8, target: u8) {
-        blob[OFF_KEYS + key as usize * 3] = target;
+    pub fn key(blob: &[u8], id: u8) -> Key {
+        let e = &blob[OFF_KEYS + id as usize * 3..][..3];
+        // A turbo entry names the key itself, a plain one stores 255 for "unchanged".
+        let target = if e[0] == id { IDENTITY } else { e[0] };
+        if e[2] > 0 { Key { target, turbo: e[1], hz: e[2] } } else { Key { target, turbo: 0, hz: 0 } }
+    }
+
+    /// Turbo needs a real key id to repeat, so an unchanged key is written as itself.
+    pub fn set_key(blob: &mut [u8], id: u8, k: Key) {
+        let entry = if k.turbo > 0 && k.target != MACRO {
+            let target = if k.target == IDENTITY { id } else { k.target };
+            [target, k.turbo, k.hz.clamp(1, TURBO_MAX_HZ)]
+        } else {
+            [k.target, 0, 0]
+        };
+        blob[OFF_KEYS + id as usize * 3..][..3].copy_from_slice(&entry);
     }
 
     /// Change tag other apps compare to detect an edited slot, 0xffff means never written.
@@ -72,9 +98,107 @@ pub mod map {
     /// First changed packet and how many follow it, the official app also resends only the changed span.
     pub fn changed_span(old: &[u8], new: &[u8]) -> Option<(usize, usize)> {
         let differs = |i: usize| old[i * PKG..(i + 1) * PKG] != new[i * PKG..(i + 1) * PKG];
-        let first = (0..SIZE / PKG).find(|&i| differs(i))?;
-        let last = (0..SIZE / PKG).rev().find(|&i| differs(i))?;
+        let first = (0..new.len() / PKG).find(|&i| differs(i))?;
+        let last = (0..new.len() / PKG).rev().find(|&i| differs(i))?;
         Some((first, last - first + 1))
+    }
+}
+
+/// Macro store of protocol 3.2 (MacroConfigParserV10), one per profile. Vader 5 Pro answers 83 packets,
+/// Space Station writes only the first 81 and the pad keeps the tail itself (the last 4 bytes stay 0).
+/// Header: version u16, count u16, ten u16 body offsets in 4-byte words after the header.
+/// Body: trigger key, step count u16, kind, repeat interval u16 (ms), 6 x ff, 20-byte name,
+/// then 4 bytes per step: time since the macro started u16 (ms), key, event.
+pub mod macros {
+    const HEADER: usize = 24;
+    const SLOTS: usize = 10;
+    const BODY: usize = 32;
+    /// GetPackageCount (81) x 20 bytes, what Space Station owns of the store.
+    const OWNED: usize = 81 * 20;
+
+    /// MacroEnableType.
+    pub const KINDS: [(u8, &str); 3] = [(1, "Один раз"), (2, "Пока зажата"), (3, "Вкл/выкл нажатием")];
+    /// MacroActionEvent values offered in the editor, 2/3 (sticks) and 5 (hold) are kept but not offered.
+    pub const EVENTS: [(u8, &str); 2] = [(1, "Нажать"), (0, "Отпустить")];
+    pub const MAX: usize = SLOTS;
+
+    #[derive(Clone, PartialEq, Debug)]
+    pub struct Step {
+        pub delay_ms: u16,
+        pub key: u8,
+        pub event: u8,
+    }
+
+    #[derive(Clone, PartialEq, Debug)]
+    pub struct Macro {
+        pub key: u8,
+        pub kind: u8,
+        pub interval_ms: u16,
+        pub steps: Vec<Step>,
+    }
+
+    fn u16_at(b: &[u8], i: usize) -> u16 {
+        u16::from_le_bytes([b[i], b[i + 1]])
+    }
+
+    pub fn parse(blob: &[u8]) -> Vec<Macro> {
+        let count = u16_at(blob, 2) as usize;
+        if count > SLOTS {
+            return vec![];
+        }
+        let mut out = vec![];
+        for i in 0..count {
+            let p = HEADER + u16_at(blob, 4 + 2 * i) as usize * 4;
+            let n = blob.get(p + 1..p + 3).map_or(0, |b| u16_at(b, 0) as usize);
+            if p + BODY + 4 * n > blob.len() {
+                break;
+            }
+            let mut prev = 0;
+            let steps = (0..n)
+                .map(|j| {
+                    let s = &blob[p + BODY + 4 * j..][..4];
+                    let t = u16_at(s, 0);
+                    let step = Step { delay_ms: t.saturating_sub(prev), key: s[2], event: s[3] };
+                    prev = t;
+                    step
+                })
+                .collect();
+            out.push(Macro { key: blob[p], kind: blob[p + 3], interval_ms: u16_at(blob, p + 4), steps });
+        }
+        out
+    }
+
+    /// Builds a store of the same size as `old`, keeping its version and the tail past 81 packets,
+    /// unused bytes are ff like erased flash.
+    pub fn encode(old: &[u8], list: &[Macro]) -> Result<Vec<u8>, String> {
+        if list.len() > SLOTS {
+            return Err(format!("не больше {SLOTS} макросов"));
+        }
+        let mut out = old.to_vec();
+        let owned = OWNED.min(out.len());
+        out[2..owned].fill(0xff);
+        out[2..4].copy_from_slice(&(list.len() as u16).to_le_bytes());
+        let mut p = HEADER;
+        for (i, m) in list.iter().enumerate() {
+            if p + BODY + 4 * m.steps.len() > owned {
+                return Err("макросы не помещаются в память геймпада".into());
+            }
+            out[4 + 2 * i..][..2].copy_from_slice(&(((p - HEADER) / 4) as u16).to_le_bytes());
+            out[p] = m.key;
+            out[p + 1..p + 3].copy_from_slice(&(m.steps.len() as u16).to_le_bytes());
+            out[p + 3] = m.kind;
+            out[p + 4..p + 6].copy_from_slice(&m.interval_ms.to_le_bytes());
+            let mut t = 0u16;
+            for (j, s) in m.steps.iter().enumerate() {
+                t = t.checked_add(s.delay_ms).ok_or("макрос длиннее 65 секунд")?;
+                let at = p + BODY + 4 * j;
+                out[at..at + 2].copy_from_slice(&t.to_le_bytes());
+                out[at + 2] = s.key;
+                out[at + 3] = s.event;
+            }
+            p += BODY + 4 * m.steps.len();
+        }
+        Ok(out)
     }
 }
 
@@ -313,12 +437,49 @@ mod tests {
     fn remaps_a_key_in_the_profile_blob() {
         let old = vec![map::IDENTITY; map::SIZE];
         let mut new = old.clone();
-        assert_eq!(map::target(&new, 18), map::IDENTITY);
-        map::set_target(&mut new, 18, 4);
+        assert_eq!(map::key(&new, 18).target, map::IDENTITY);
+        map::set_key(&mut new, 18, map::Key { target: 4, turbo: 0, hz: 0 });
         map::set_version(&mut new, 0x0840);
         // M1 sits at byte 13 + 18 * 3 = 67 (packet 3), the version at 225 (packet 11)
         assert_eq!((new[67], new[225], new[226]), (4, 0x40, 0x08));
         assert_eq!(map::changed_span(&old, &new), Some((3, 9)));
         assert_eq!(map::changed_span(&old, &old), None);
+    }
+
+    #[test]
+    fn turbo_on_an_unchanged_key_names_the_key_itself() {
+        let mut blob = vec![map::IDENTITY; map::SIZE];
+        map::set_key(&mut blob, 4, map::Key { target: map::IDENTITY, turbo: 1, hz: 15 });
+        assert_eq!(blob[13 + 12..13 + 15], [4, 1, 15]);
+        assert_eq!(map::key(&blob, 4), map::Key { target: map::IDENTITY, turbo: 1, hz: 15 });
+        map::set_key(&mut blob, 4, map::Key { target: map::IDENTITY, turbo: 0, hz: 15 });
+        assert_eq!(blob[13 + 12..13 + 15], [255, 0, 0]);
+    }
+
+    #[test]
+    fn macro_store_roundtrip() {
+        // empty store as read from a Vader 5 Pro: version 0x0100, no macros, 83 packets
+        let mut empty = vec![0xff; 83 * 20];
+        empty[..24].copy_from_slice(&[0, 1, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0]);
+        empty[1656..].fill(0);
+        assert!(macros::parse(&empty).is_empty());
+
+        let m1 = macros::Macro {
+            key: 18,
+            kind: 1,
+            interval_ms: 0,
+            steps: vec![
+                macros::Step { delay_ms: 0, key: 4, event: 1 },
+                macros::Step { delay_ms: 50, key: 4, event: 0 },
+            ],
+        };
+        let m2 = macros::Macro { key: 19, kind: 2, interval_ms: 100, steps: vec![macros::Step { delay_ms: 10, key: 5, event: 1 }] };
+        let blob = macros::encode(&empty, &[m1.clone(), m2.clone()]).unwrap();
+        assert_eq!(blob[..8], [0, 1, 2, 0, 0, 0, 10, 0]); // second body after 8 + 2 words
+        assert_eq!(blob[8..10], [0xff, 0xff]);
+        assert_eq!(blob[24..30], [18, 2, 0, 1, 0, 0]);
+        assert_eq!(blob[56..64], [0, 0, 4, 1, 50, 0, 4, 0]);
+        assert_eq!(blob[1620..], empty[1620..]);
+        assert_eq!(macros::parse(&blob), vec![m1, m2]);
     }
 }

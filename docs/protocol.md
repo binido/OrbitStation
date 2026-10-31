@@ -90,9 +90,29 @@ commits the running profile to flash (up to 10 s). Verified on hardware.
 | 770 | 20 | title, UTF-16 |
 
 Key target `ff` keeps the button as is, `20` runs a macro, `fe` keyboard/mouse.
+Turbo: `[key itself or target, mode, presses per second]`, mode 1 = while held, 2 = toggled, rate 1..30;
+a non-zero third byte is what marks the entry as turbo.
 Key ids: 0 ↑, 1 →, 2 ↓, 3 ←, 4 A, 5 B, 6 Select, 7 X, 8 Y, 9 Start, 10 LB, 11 RB, 12 LT, 13 RT,
 14 L3, 15 R3, 16 C, 17 Z, 18-21 M1-M4, 22 LM, 23 RM, 24 Fn, 25 Turbo, 27 Home.
 Fuller layout: [openflydigi](https://github.com/mkaliaha/openflydigi) `docs/findings-profile-blob.md`.
+
+## Macro store (protocol 3.2)
+
+Read `ac [profile, 20]`, write `ad [profile, first, count, 20]` + `ae [n, 20 bytes]`, same framing as
+the mapping blob, then `a6` save and `a2` apply (macros play only after an apply). Vader 5 Pro answers
+83 packets (1660 bytes); Space Station writes only the first 81, the last 4 bytes stay `00` whatever
+is written there.
+
+| Offset | Size | Meaning |
+|---|---|---|
+| 0 | 2 | store version, LE (`0x0100`) |
+| 2 | 2 | macro count, up to 10 |
+| 4 | 10 x 2 | body offsets in 4-byte words after byte 24 |
+| 24 | | bodies |
+
+Body: key id, step count u16, kind (1 once, 2 while held, 3 toggled), repeat pause u16 ms,
+6 x `ff`, 20-byte name, then per step: time since start u16 ms, key id, event (1 press, 0 release,
+2/3 sticks, 5 hold). The key's table entry must be `20 00 00`; a body left on a remapped key keeps playing.
 
 ## Reproducing
 

@@ -1,8 +1,9 @@
 mod device;
 mod proto;
 
-use device::Device;
+use device::{Device, Profile};
 use eframe::egui::{self, Color32, Pos2, Stroke, Vec2};
+use proto::macros::{self, Macro, Step};
 use proto::{DeviceInfo, HwStatus, Toggle, cmd, map};
 use std::path::PathBuf;
 use std::time::{Duration, Instant, SystemTime, UNIX_EPOCH};
@@ -15,11 +16,36 @@ enum Tab {
     Settings,
 }
 
-/// Profile mapping as read from the pad and as edited in the window.
+/// Profile as read from the pad and as edited in the window.
 struct Mapping {
     cfg: u8,
-    device: Vec<u8>,
-    edited: Vec<u8>,
+    device: Profile,
+    map: Vec<u8>,
+    macros: Vec<Macro>,
+}
+
+impl Mapping {
+    fn new(cfg: u8, device: Profile) -> Mapping {
+        Mapping { cfg, map: device.map.clone(), macros: macros::parse(&device.macros), device }
+    }
+
+    /// The profile to write: keys with a macro point at the macro store, keys that lost one are reset,
+    /// otherwise the pad would go on playing an orphaned macro under the new binding.
+    fn build(&self) -> Result<Profile, String> {
+        let mut map = self.map.clone();
+        for (id, name) in map::KEYS {
+            let count = self.macros.iter().filter(|m| m.key == id).count();
+            if count > 1 {
+                return Err(format!("на кнопке {name} несколько макросов"));
+            }
+            if count == 1 {
+                map::set_key(&mut map, id, map::Key { target: map::MACRO, turbo: 0, hz: 0 });
+            } else if map::key(&map, id).target == map::MACRO {
+                map::set_key(&mut map, id, map::Key { target: map::IDENTITY, turbo: 0, hz: 0 });
+            }
+        }
+        Ok(Profile { map, macros: macros::encode(&self.device.macros, &self.macros)? })
+    }
 }
 
 struct App {
@@ -184,31 +210,35 @@ impl App {
     fn load_mapping(&mut self) {
         let cfg = self.profile;
         match self.dev.as_mut().and_then(|d| d.read_profile(cfg)) {
-            Some(blob) => {
-                self.mapping = Some(Mapping { cfg, edited: blob.clone(), device: blob });
-                self.note = format!("Раскладка профиля {} загружена", cfg + 1);
+            Some(p) => {
+                self.mapping = Some(Mapping::new(cfg, p));
+                self.note = format!("Профиль {} загружен", cfg + 1);
             }
-            None => self.note = "Не удалось прочитать раскладку".into(),
+            None => self.note = "Не удалось прочитать профиль".into(),
         }
     }
 
     fn save_mapping(&mut self) {
         let (Some(dev), Some(m)) = (self.dev.as_mut(), self.mapping.as_mut()) else { return };
+        let mut new = match m.build() {
+            Ok(p) => p,
+            Err(e) => {
+                self.note = e;
+                return;
+            }
+        };
+        map::set_version(&mut new.map, new_version(&m.device.map));
         let backup = backup_profile(m.cfg, &m.device);
-        let version = new_version(&m.device);
-        let mut new = m.edited.clone();
-        map::set_version(&mut new, version);
-        self.note = match dev.write_profile(m.cfg, &m.device, &new, version) {
+        self.note = match dev.write_profile(m.cfg, &m.device, &new) {
             Err(e) => format!("Запись не удалась: {e}"),
             Ok(()) if dev.read_profile(m.cfg).as_ref() != Some(&new) => {
-                "Записано, но проверочное чтение не совпало, загрузи раскладку заново".into()
+                "Записано, но проверочное чтение не совпало, загрузи профиль заново".into()
             }
             Ok(()) => {
-                m.device = new.clone();
-                m.edited = new;
+                *m = Mapping::new(m.cfg, new);
                 match backup {
-                    Ok(path) => format!("Раскладка сохранена, прежняя копия: {}", path.display()),
-                    Err(e) => format!("Раскладка сохранена, но копию сделать не удалось: {e}"),
+                    Ok(path) => format!("Профиль сохранён, прежняя копия: {}", path.display()),
+                    Err(e) => format!("Профиль сохранён, но копию сделать не удалось: {e}"),
                 }
             }
         };
@@ -216,7 +246,7 @@ impl App {
 
     fn remap_tab(&mut self, ui: &mut egui::Ui) {
         if self.mapping.as_ref().is_none_or(|m| m.cfg != self.profile) {
-            ui.label(format!("Раскладка профиля {} ещё не загружена.", self.profile + 1));
+            ui.label(format!("Профиль {} ещё не загружен.", self.profile + 1));
             if ui.button("Загрузить с геймпада").clicked() {
                 self.load_mapping();
             }
@@ -225,37 +255,29 @@ impl App {
         let m = self.mapping.as_mut().unwrap();
         ui.label(format!("Профиль {}. Кнопка слева будет нажимать то, что выбрано справа.", m.cfg + 1));
         ui.add_space(8.0);
-        egui::Grid::new("remap").num_columns(4).spacing([16.0, 6.0]).show(ui, |ui| {
-            for (i, (key, name)) in map::KEYS.iter().enumerate() {
-                let mut target = map::target(&m.edited, *key);
-                let label = map::TARGETS.iter().find(|t| t.0 == target).map_or("Своё значение", |t| t.1);
-                let changed = target != map::target(&m.device, *key);
-                ui.label(if changed { egui::RichText::new(*name).strong() } else { egui::RichText::new(*name) });
-                egui::ComboBox::from_id_salt(key).selected_text(label).width(130.0).show_ui(ui, |ui| {
-                    for (v, n) in map::TARGETS {
-                        ui.selectable_value(&mut target, v, n);
-                    }
-                });
-                map::set_target(&mut m.edited, *key, target);
-                if i % 2 == 1 {
-                    ui.end_row();
-                }
-            }
-        });
+        keys_grid(ui, m);
         ui.add_space(12.0);
-        let dirty = m.edited != m.device;
+        ui.heading("Макросы");
+        macros_editor(ui, m);
+        ui.add_space(12.0);
+        let built = m.build();
+        if let Err(e) = &built {
+            ui.colored_label(ui.visuals().warn_fg_color, e);
+        }
+        let dirty = built.is_ok_and(|p| p != m.device);
         ui.horizontal(|ui| {
             if ui.add_enabled(dirty, egui::Button::new("Записать на геймпад")).clicked() {
                 self.save_mapping();
             }
             let m = self.mapping.as_mut().unwrap();
             if ui.add_enabled(dirty, egui::Button::new("Отменить изменения")).clicked() {
-                m.edited = m.device.clone();
+                *m = Mapping::new(m.cfg, m.device.clone());
             }
-            if ui.button("Все по умолчанию").clicked() {
-                for (key, _) in map::KEYS {
-                    map::set_target(&mut m.edited, key, map::IDENTITY);
+            if ui.button("Кнопки по умолчанию").clicked() {
+                for (id, _) in map::KEYS {
+                    map::set_key(&mut m.map, id, map::Key { target: map::IDENTITY, turbo: 0, hz: 0 });
                 }
+                m.macros.clear();
             }
             if ui.button("Перечитать").clicked() {
                 self.load_mapping();
@@ -305,7 +327,7 @@ impl App {
 }
 
 /// Saves the profile as it was on the pad before a write, the app has no other undo for flash.
-fn backup_profile(cfg: u8, blob: &[u8]) -> std::io::Result<PathBuf> {
+fn backup_profile(cfg: u8, p: &Profile) -> std::io::Result<PathBuf> {
     let base = std::env::var_os("XDG_DATA_HOME")
         .map(PathBuf::from)
         .or_else(|| std::env::var_os("HOME").map(|h| PathBuf::from(h).join(".local/share")))
@@ -313,8 +335,9 @@ fn backup_profile(cfg: u8, blob: &[u8]) -> std::io::Result<PathBuf> {
     let dir = base.join("orbitstation/backups");
     std::fs::create_dir_all(&dir)?;
     let secs = SystemTime::now().duration_since(UNIX_EPOCH).unwrap_or_default().as_secs();
-    let path = dir.join(format!("profile{}-{secs}.bin", cfg + 1));
-    std::fs::write(&path, blob)?;
+    let path = dir.join(format!("profile{}-{secs}", cfg + 1));
+    std::fs::write(path.with_extension("map.bin"), &p.map)?;
+    std::fs::write(path.with_extension("macros.bin"), &p.macros)?;
     Ok(path)
 }
 
@@ -324,6 +347,98 @@ fn new_version(blob: &[u8]) -> u16 {
     let nanos = SystemTime::now().duration_since(UNIX_EPOCH).unwrap_or_default().subsec_nanos();
     let v = (nanos % 0xffff) as u16;
     if v == old { (v + 1) % 0xffff } else { v }
+}
+
+fn name_of(list: &[(u8, &str)], v: u8) -> String {
+    list.iter().find(|t| t.0 == v).map_or_else(|| format!("#{v}"), |t| t.1.to_string())
+}
+
+fn pick(ui: &mut egui::Ui, id: impl egui::AsIdSalt, value: &mut u8, list: &[(u8, &str)], width: f32) {
+    egui::ComboBox::from_id_salt(id).selected_text(name_of(list, *value)).width(width).show_ui(ui, |ui| {
+        for (v, n) in list {
+            ui.selectable_value(value, *v, *n);
+        }
+    });
+}
+
+fn keys_grid(ui: &mut egui::Ui, m: &mut Mapping) {
+    egui::Grid::new("remap").num_columns(4).spacing([16.0, 6.0]).show(ui, |ui| {
+        ui.weak("Кнопка");
+        ui.weak("Нажимает");
+        ui.weak("Турбо");
+        ui.weak("Нажатий в секунду");
+        ui.end_row();
+        for (id, name) in map::KEYS {
+            let mut k = map::key(&m.map, id);
+            let changed = k != map::key(&m.device.map, id);
+            ui.label(if changed { egui::RichText::new(name).strong() } else { egui::RichText::new(name) });
+            if m.macros.iter().any(|mc| mc.key == id) {
+                ui.label("Макрос");
+                ui.end_row();
+                continue;
+            }
+            pick(ui, ("target", id), &mut k.target, &map::TARGETS, 130.0);
+            pick(ui, ("turbo", id), &mut k.turbo, &map::TURBO, 150.0);
+            if k.turbo > 0 {
+                k.hz = k.hz.max(1);
+                ui.add(egui::Slider::new(&mut k.hz, 1..=map::TURBO_MAX_HZ));
+            }
+            map::set_key(&mut m.map, id, k);
+            ui.end_row();
+        }
+    });
+}
+
+fn macros_editor(ui: &mut egui::Ui, m: &mut Mapping) {
+    let mut remove = None;
+    for (i, mc) in m.macros.iter_mut().enumerate() {
+        ui.push_id(i, |ui| {
+            egui::Frame::group(ui.style()).show(ui, |ui| {
+                ui.horizontal(|ui| {
+                    ui.label("Кнопка");
+                    pick(ui, "key", &mut mc.key, &map::KEYS, 70.0);
+                    ui.label("Режим");
+                    pick(ui, "kind", &mut mc.kind, &macros::KINDS, 150.0);
+                    if mc.kind != 1 {
+                        ui.label("Пауза между повторами, мс");
+                        ui.add(egui::DragValue::new(&mut mc.interval_ms).range(0..=10_000));
+                    }
+                    if ui.button("Удалить макрос").clicked() {
+                        remove = Some(i);
+                    }
+                });
+                let mut drop = None;
+                egui::Grid::new("steps").num_columns(4).spacing([12.0, 4.0]).show(ui, |ui| {
+                    for (j, st) in mc.steps.iter_mut().enumerate() {
+                        ui.push_id(j, |ui| {
+                            ui.add(egui::DragValue::new(&mut st.delay_ms).range(0..=10_000).suffix(" мс"));
+                            pick(ui, "ev", &mut st.event, &macros::EVENTS, 100.0);
+                            pick(ui, "k", &mut st.key, &map::TARGETS[1..], 80.0);
+                            if ui.small_button("✕").clicked() {
+                                drop = Some(j);
+                            }
+                        });
+                        ui.end_row();
+                    }
+                });
+                if let Some(j) = drop {
+                    mc.steps.remove(j);
+                }
+                if ui.button("+ нажатие кнопки").clicked() {
+                    mc.steps.push(Step { delay_ms: 30, key: 4, event: 1 });
+                    mc.steps.push(Step { delay_ms: 50, key: 4, event: 0 });
+                }
+            });
+        });
+    }
+    if let Some(i) = remove {
+        m.macros.remove(i);
+    }
+    let free = map::KEYS.iter().rev().map(|k| k.0).find(|k| m.macros.iter().all(|mc| mc.key != *k));
+    if m.macros.len() < macros::MAX && ui.button("+ Добавить макрос").clicked() {
+        let steps = vec![Step { delay_ms: 0, key: 4, event: 1 }, Step { delay_ms: 50, key: 4, event: 0 }];
+        m.macros.push(Macro { key: free.unwrap_or(18), kind: 1, interval_ms: 0, steps });
+    }
 }
 
 fn stick(ui: &mut egui::Ui, title: &str, x: i16, y: i16, pressed: bool) {

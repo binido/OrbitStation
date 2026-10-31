@@ -8,11 +8,13 @@ Native Rust + egui, no Electron. Supported: **Flydigi Vader 5 Pro** over USB cab
 - Device info: model, firmware, battery
 - Switching between the 4 onboard profiles
 - Button remapping per profile, including the back paddles M1-M4, LM/RM and C/Z
+- Turbo per button (while held or toggled, 1-30 presses per second)
+- Macros: up to 10 per profile, played once, while held or toggled
 - Live test of buttons, sticks, triggers, gyro and accelerometer, vibration test
 - Settings: stick auto-calibration, debounce, rebound, precision, center sensitivity,
   Home as Xbox Guide, quick profile switch, sleep time and more
 
-Macros, turbo, stick curves and RGB are not done yet. Before every remap write the previous
+Stick and trigger curves, gyro mapping and RGB are not done yet. Before every write the previous
 profile is copied to `~/.local/share/orbitstation/backups`. The protocol is in [docs/protocol.md](docs/protocol.md). Thanks to
 [openflydigi](https://github.com/mkaliaha/openflydigi) for the profile blob research.
 
