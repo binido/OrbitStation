@@ -6,6 +6,7 @@ pub const PKT: usize = 32;
 
 pub mod cmd {
     pub const HEARTBEAT: u8 = 0x01;
+    pub const NICKNAME: u8 = 0x02;
     pub const HW_STATUS: u8 = 0x03;
     pub const TEST_MODE: u8 = 0x11;
     pub const VIBRATION: u8 = 0x12;
@@ -14,12 +15,14 @@ pub mod cmd {
     pub const PRECISION: u8 = 0x15;
     pub const SENSITIVITY: u8 = 0x16;
     pub const SLEEP_TIME: u8 = 0x17;
+    pub const SET_NICKNAME: u8 = 0x18;
     pub const PROFILE_INFO: u8 = 0xa1;
     pub const APPLY_PROFILE: u8 = 0xa2;
     pub const MAP_READ: u8 = 0xa3;
     pub const MAP_WRITE_START: u8 = 0xa4;
     pub const MAP_WRITE_PACK: u8 = 0xa5;
     pub const MAP_SAVE: u8 = 0xa6;
+    pub const MAP_RESET: u8 = 0xaf;
     pub const MACRO_READ: u8 = 0xac;
     pub const MACRO_WRITE_START: u8 = 0xad;
     pub const MACRO_WRITE_PACK: u8 = 0xae;
@@ -35,6 +38,8 @@ pub mod map {
     pub const SIZE: usize = 840;
     const OFF_KEYS: usize = 13;
     const OFF_VERSION: usize = 225;
+    const OFF_TITLE: usize = 770;
+    pub const TITLE_CHARS: usize = 10;
     /// Key table target meaning "the button does what it says on the shell".
     pub const IDENTITY: u8 = 255;
     /// Key table target meaning "the button plays its macro from the macro store".
@@ -96,6 +101,20 @@ pub mod map {
 
     pub fn set_version(blob: &mut [u8], v: u16) {
         blob[OFF_VERSION..OFF_VERSION + 2].copy_from_slice(&v.to_le_bytes());
+    }
+
+    /// Profile name, UTF-16LE in 20 bytes; Space Station trims both 0 and ffff padding.
+    pub fn title(blob: &[u8]) -> String {
+        let units: Vec<u16> = blob[OFF_TITLE..OFF_TITLE + 20].chunks(2).map(|c| u16::from_le_bytes([c[0], c[1]])).collect();
+        String::from_utf16_lossy(&units).trim_end_matches(['\0', '\u{ffff}']).to_string()
+    }
+
+    pub fn set_title(blob: &mut [u8], name: &str) {
+        let field = &mut blob[OFF_TITLE..OFF_TITLE + 20];
+        field.fill(0);
+        for (i, u) in name.encode_utf16().take(TITLE_CHARS).enumerate() {
+            field[2 * i..2 * i + 2].copy_from_slice(&u.to_le_bytes());
+        }
     }
 
     /// First changed packet and how many follow it, the official app also resends only the changed span.
@@ -405,8 +424,16 @@ pub mod macros {
 
     /// MacroEnableType.
     pub const KINDS: [(u8, &str); 3] = [(1, "Один раз"), (2, "Пока зажата"), (3, "Вкл/выкл нажатием")];
-    /// MacroActionEvent values offered in the editor, 2/3 (sticks) and 5 (hold) are kept but not offered.
-    pub const EVENTS: [(u8, &str); 2] = [(1, "Нажать"), (0, "Отпустить")];
+    /// MacroActionEvent. Space Station never writes 5 (hold): its "hold" is a press and a release.
+    pub const EVENTS: [(u8, &str); 4] = [(1, "Нажать"), (0, "Отпустить"), (2, "Левый стик"), (3, "Правый стик")];
+    /// Stick steps carry a direction instead of a key, ControllerKey_Joystick_*; Center releases the stick.
+    pub const DIRECTIONS: [(u8, &str); 9] = [
+        (161, "↑"), (162, "↗"), (163, "→"), (164, "↘"), (165, "↓"), (166, "↙"), (167, "←"), (168, "↖"), (160, "Центр"),
+    ];
+
+    pub fn is_stick(event: u8) -> bool {
+        event == 2 || event == 3
+    }
     pub const MAX: usize = SLOTS;
 
     #[derive(Clone, PartialEq, Debug)]
@@ -580,6 +607,33 @@ pub fn parse_heartbeat(p: &[u8]) -> DeviceInfo {
         firmware: version(d[10], d[11]),
         nearlink: version(d[22], d[23]),
     }
+}
+
+/// The pad stores the payload of 0x18 as sent, checksum included, so the name ends with a 0.
+pub const NICKNAME_BYTES: usize = 25;
+
+pub fn nickname_packet(name: &str) -> [u8; PKT] {
+    let mut bytes: Vec<u8> = vec![];
+    for c in name.chars() {
+        let mut buf = [0; 4];
+        let enc = c.encode_utf8(&mut buf).as_bytes();
+        if bytes.len() + enc.len() > NICKNAME_BYTES {
+            break;
+        }
+        bytes.extend_from_slice(enc);
+    }
+    // An empty name is written as all ff, the factory state; a 0 byte would be shown by Space Station.
+    if bytes.is_empty() {
+        return request(cmd::SET_NICKNAME, &[0xff; NICKNAME_BYTES + 1]);
+    }
+    bytes.push(0);
+    request(cmd::SET_NICKNAME, &bytes)
+}
+
+pub fn parse_nickname(p: &[u8]) -> String {
+    let d = &p[5..31];
+    let end = d.iter().position(|b| *b == 0 || *b == 0xff).unwrap_or(d.len());
+    String::from_utf8_lossy(&d[..end]).to_string()
 }
 
 pub fn model_name(device_id: u8) -> &'static str {
@@ -822,6 +876,30 @@ mod tests {
         assert_eq!(rgb::led(&blob, 5, 0), [0, 0, 255]); // the pattern travels by frame
         rgb::apply(&mut blob, 0, &[]);
         assert!(blob[20..].iter().all(|b| *b == 0) && blob[8] == 0 && blob[2] == 0);
+    }
+
+    #[test]
+    fn profile_title_and_nickname() {
+        let mut blob = vec![0u8; map::SIZE];
+        // title of profile 1 read from a Vader 5 Pro
+        blob[770..790].copy_from_slice(&[0x4d, 0x91, 0x6e, 0x7f, 0x31, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0xff, 0xff, 0xff, 0xff]);
+        assert_eq!(map::title(&blob), "配置1");
+        map::set_title(&mut blob, "Шутеры и гонки");
+        assert_eq!(map::title(&blob), "Шутеры и г");
+
+        // what the pad answered after `nickname_packet("Вейдер")`
+        let p = nickname_packet("Вейдер");
+        assert_eq!(p[3] as usize, 2 + "Вейдер".len() + 1);
+        let mut reply = [0u8; PKT];
+        reply[..5].copy_from_slice(&[0x5a, 0xa5, 2, 1, 0]);
+        reply[5..5 + 14].copy_from_slice(&p[4..4 + 14]);
+        reply[19] = p[4 + 13];
+        assert_eq!(parse_nickname(&reply), "Вейдер");
+        let empty = nickname_packet("");
+        assert_eq!((empty[3], empty[4], empty[29]), (28, 0xff, 0xff));
+        reply[5..31].fill(0xff);
+        assert_eq!(parse_nickname(&reply), "");
+        assert!(nickname_packet(&"я".repeat(20))[3] as usize <= 2 + NICKNAME_BYTES + 1);
     }
 
     #[test]

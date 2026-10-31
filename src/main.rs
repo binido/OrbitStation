@@ -29,6 +29,8 @@ struct Mapping {
     rgb: Vec<u8>,
     /// Colours the lighting effect is generated from; the pad stores only frames.
     colors: Vec<rgb::Rgb>,
+    /// Set by the vibration editor, the app runs the motors for a second.
+    test_vibration: bool,
 }
 
 impl Mapping {
@@ -39,8 +41,20 @@ impl Mapping {
             macros: macros::parse(&device.macros),
             rgb: device.rgb.clone(),
             colors: vec![[0, 116, 255]],
+            test_vibration: false,
             device,
         }
+    }
+
+    /// Puts a profile from a file or the factory template into the editor, the device copy stays.
+    fn replace(&mut self, p: &Profile) -> Result<(), String> {
+        if (p.map.len(), p.macros.len(), p.rgb.len()) != (self.device.map.len(), self.device.macros.len(), self.device.rgb.len()) {
+            return Err("файл от другого геймпада или повреждён".into());
+        }
+        self.map = p.map.clone();
+        self.macros = macros::parse(&p.macros);
+        self.rgb = p.rgb.clone();
+        Ok(())
     }
 
     /// The profile to write: keys with a macro point at the macro store, keys that lost one are reset,
@@ -71,8 +85,13 @@ struct App {
     profile: u8,
     tab: Tab,
     test_mode: bool,
-    vibration: [u8; 2],
+    /// Grip left/right and trigger left/right motors on the test tab.
+    vibration: [u8; 4],
+    vibration_stop: Option<Instant>,
     mapping: Option<Mapping>,
+    nickname: String,
+    import_pick: Option<PathBuf>,
+    confirm_reset_all: bool,
     note: String,
 }
 
@@ -87,8 +106,12 @@ impl App {
             profile: 0,
             tab: Tab::Device,
             test_mode: false,
-            vibration: [0, 0],
+            vibration: [0; 4],
+            vibration_stop: None,
             mapping: None,
+            nickname: String::new(),
+            import_pick: None,
+            confirm_reset_all: false,
             note: String::new(),
         };
         app.connect();
@@ -126,6 +149,9 @@ impl App {
         if let Some(r) = self.call(proto::request(cmd::PROFILE_INFO, &[])) {
             self.profile = proto::parse_profile(&r);
         }
+        if let Some(r) = self.call(proto::request(cmd::NICKNAME, &[])) {
+            self.nickname = proto::parse_nickname(&r);
+        }
     }
 
     fn set_test_mode(&mut self, on: bool) {
@@ -151,6 +177,15 @@ impl App {
         egui::Grid::new("info").num_columns(2).spacing([24.0, 6.0]).show(ui, |ui| {
             ui.label("Модель");
             ui.strong(proto::model_name(info.device_id));
+            ui.end_row();
+            ui.label("Имя геймпада");
+            ui.horizontal(|ui| {
+                ui.add(egui::TextEdit::singleline(&mut self.nickname).hint_text("без имени").desired_width(180.0));
+                if ui.button("Сохранить имя").clicked() {
+                    let name = self.nickname.clone();
+                    self.apply(proto::nickname_packet(&name), "имя геймпада");
+                }
+            });
             ui.end_row();
             ui.label("ID устройства");
             ui.label(info.device_id.to_string());
@@ -183,6 +218,37 @@ impl App {
         if ui.button("Обновить").clicked() {
             self.refresh();
         }
+        ui.add_space(24.0);
+        ui.heading("Сброс всех профилей");
+        ui.label("Как «Restore default» в Space Station: все 4 профиля станут заводскими. Общие настройки не меняются.");
+        ui.label("Перед сбросом приложение сохранит копии всех профилей, их можно будет загрузить из файла.");
+        ui.checkbox(&mut self.confirm_reset_all, "Понимаю, что все 4 профиля будут стёрты");
+        if ui.add_enabled(self.confirm_reset_all, egui::Button::new("Сбросить все профили")).clicked() {
+            self.confirm_reset_all = false;
+            self.reset_all();
+        }
+    }
+
+    fn reset_all(&mut self) {
+        let Some(dev) = self.dev.as_mut() else { return };
+        // Reading a profile switches to it, so every slot is read and the active one comes back after.
+        for cfg in 0..4 {
+            match dev.read_profile(cfg).map(|p| backup_profile(cfg, &p)) {
+                Some(Ok(_)) => {}
+                _ => {
+                    self.note = format!("Не удалось сохранить копию профиля {}, сброс отменён", cfg + 1);
+                    dev.call(proto::request(cmd::APPLY_PROFILE, &[self.profile]));
+                    return;
+                }
+            }
+        }
+        self.note = match dev.reset_all_profiles() {
+            Ok(()) => format!("Все профили сброшены, копии в {}", data_dir().join("backups").display()),
+            Err(e) => e,
+        };
+        dev.call(proto::request(cmd::APPLY_PROFILE, &[self.profile]));
+        self.mapping = None;
+        self.refresh();
     }
 
     fn test_tab(&mut self, ui: &mut egui::Ui) {
@@ -213,11 +279,12 @@ impl App {
         ui.add_space(16.0);
         ui.heading("Вибрация");
         let old = self.vibration;
-        ui.add(egui::Slider::new(&mut self.vibration[0], 0..=255).text("левый мотор"));
-        ui.add(egui::Slider::new(&mut self.vibration[1], 0..=255).text("правый мотор"));
+        for (v, name) in self.vibration.iter_mut().zip(["левая рукоятка", "правая рукоятка", "мотор LT", "мотор RT"]) {
+            ui.add(egui::Slider::new(v, 0..=255).text(name));
+        }
         if old != self.vibration {
-            let [l, r] = self.vibration;
-            self.call(proto::request(cmd::VIBRATION, &[l, r, 0, 0]));
+            self.vibration_stop = None;
+            self.call(proto::request(cmd::VIBRATION, &self.vibration));
         }
     }
 
@@ -270,10 +337,15 @@ impl App {
             }
             return;
         }
+        self.profile_files(ui);
         let m = self.mapping.as_mut().unwrap();
-        ui.label(format!("Профиль {}", m.cfg + 1));
         ui.add_space(8.0);
         editor(ui, m);
+        if std::mem::take(&mut m.test_vibration) {
+            self.call(proto::request(cmd::VIBRATION, &[160, 160, 160, 160]));
+            self.vibration_stop = Some(Instant::now() + Duration::from_secs(1));
+        }
+        let m = self.mapping.as_mut().unwrap();
         ui.add_space(12.0);
         let built = m.build();
         if let Err(e) = &built {
@@ -290,6 +362,57 @@ impl App {
             }
             if ui.button("Перечитать").clicked() {
                 self.load_mapping();
+            }
+        });
+    }
+
+    /// Profile name, files and the factory template, shared by every profile tab.
+    fn profile_files(&mut self, ui: &mut egui::Ui) {
+        let m = self.mapping.as_mut().unwrap();
+        ui.horizontal(|ui| {
+            ui.strong(format!("Профиль {}", m.cfg + 1));
+            let mut title = map::title(&m.map);
+            let edit = egui::TextEdit::singleline(&mut title).char_limit(map::TITLE_CHARS).desired_width(140.0);
+            if ui.add(edit).on_hover_text("Название профиля, до 10 символов").changed() {
+                map::set_title(&mut m.map, &title);
+            }
+            if ui.button("Заводской профиль").on_hover_text("Только этот профиль, остальные не трогаются").clicked() {
+                let factory = Profile::factory(m.cfg);
+                self.note = m.replace(&factory).map_or_else(|e| e, |_| "Заводские значения подставлены, нажми «Записать на геймпад»".into());
+            }
+        });
+        ui.horizontal(|ui| {
+            if ui.button("Сохранить в файл").clicked() {
+                let m = self.mapping.as_ref().unwrap();
+                let name = map::title(&m.map).chars().filter(|c| c.is_alphanumeric() || " -_".contains(*c)).collect::<String>();
+                let name = if name.trim().is_empty() { format!("profile{}", m.cfg + 1) } else { name.trim().to_string() };
+                let path = data_dir().join("profiles").join(format!("{name}.osp"));
+                self.note = match m.build().and_then(|p| write_file(&path, &p.to_file()).map_err(|e| e.to_string())) {
+                    Ok(()) => format!("Сохранено в {}", path.display()),
+                    Err(e) => format!("Не удалось сохранить: {e}"),
+                };
+            }
+            let files = profile_files();
+            let label = self.import_pick.as_ref().map_or("выбери файл".to_string(), |p| file_label(p));
+            egui::ComboBox::from_id_salt("import").selected_text(label).width(260.0).show_ui(ui, |ui| {
+                for f in files {
+                    let text = file_label(&f);
+                    ui.selectable_value(&mut self.import_pick, Some(f), text);
+                }
+            });
+            if ui.add_enabled(self.import_pick.is_some(), egui::Button::new("Загрузить из файла")).clicked() {
+                let path = self.import_pick.clone().unwrap();
+                let loaded = std::fs::read(&path).ok().and_then(|d| Profile::from_file(&d)).ok_or("не удалось прочитать файл".to_string());
+                let m = self.mapping.as_mut().unwrap();
+                self.note = match loaded.and_then(|p| m.replace(&p)) {
+                    Ok(()) => format!("Загружено из {}, нажми «Записать на геймпад»", file_label(&path)),
+                    Err(e) => e,
+                };
+            }
+            if ui.button("Открыть папку").clicked() {
+                let dir = data_dir();
+                let _ = std::fs::create_dir_all(dir.join("profiles"));
+                let _ = std::process::Command::new("xdg-open").arg(dir).spawn();
             }
         });
     }
@@ -335,18 +458,45 @@ impl App {
     }
 }
 
-/// Saves the profile as it was on the pad before a write, the app has no other undo for flash.
-fn backup_profile(cfg: u8, p: &Profile) -> std::io::Result<PathBuf> {
-    let base = std::env::var_os("XDG_DATA_HOME")
+fn data_dir() -> PathBuf {
+    std::env::var_os("XDG_DATA_HOME")
         .map(PathBuf::from)
         .or_else(|| std::env::var_os("HOME").map(|h| PathBuf::from(h).join(".local/share")))
-        .ok_or(std::io::ErrorKind::NotFound)?;
-    let dir = base.join("orbitstation/backups");
-    std::fs::create_dir_all(&dir)?;
+        .unwrap_or_else(|| PathBuf::from("."))
+        .join("orbitstation")
+}
+
+fn write_file(path: &std::path::Path, data: &[u8]) -> std::io::Result<()> {
+    std::fs::create_dir_all(path.parent().unwrap())?;
+    std::fs::write(path, data)
+}
+
+/// Saved profiles first, then backups, newest first.
+fn profile_files() -> Vec<PathBuf> {
+    let list = |dir: &str| {
+        let mut v: Vec<(SystemTime, PathBuf)> = std::fs::read_dir(data_dir().join(dir))
+            .into_iter()
+            .flatten()
+            .flatten()
+            .filter(|e| e.path().extension().is_some_and(|x| x == "osp"))
+            .map(|e| (e.metadata().and_then(|m| m.modified()).unwrap_or(UNIX_EPOCH), e.path()))
+            .collect();
+        v.sort_by_key(|e| std::cmp::Reverse(e.0));
+        v.into_iter().map(|(_, p)| p)
+    };
+    list("profiles").chain(list("backups")).collect()
+}
+
+fn file_label(p: &std::path::Path) -> String {
+    let name = p.file_stem().unwrap_or_default().to_string_lossy();
+    if p.parent().is_some_and(|d| d.ends_with("backups")) { format!("копия: {name}") } else { name.into_owned() }
+}
+
+/// Saves the profile as it was on the pad before a write, the app has no other undo for flash.
+fn backup_profile(cfg: u8, p: &Profile) -> std::io::Result<PathBuf> {
     let secs = SystemTime::now().duration_since(UNIX_EPOCH).unwrap_or_default().as_secs();
-    let path = dir.join(format!("profile{}-{secs}", cfg + 1));
-    std::fs::write(path.with_extension("map.bin"), &p.map)?;
-    std::fs::write(path.with_extension("macros.bin"), &p.macros)?;
+    let path = data_dir().join("backups").join(format!("profile{}-{secs}.osp", cfg + 1));
+    write_file(&path, &p.to_file())?;
     Ok(path)
 }
 
@@ -506,7 +656,9 @@ fn vibration_editor(ui: &mut egui::Ui, m: &mut Mapping) {
         vibration::set(&mut m.map, v);
     }
     ui.add_space(8.0);
-    ui.label("Проверить вибрацию можно ползунками на вкладке «Тест кнопок» после записи.");
+    if ui.button("Проверить вибрацию (1 секунда)").on_hover_text("Сила и окна применяются после записи на геймпад").clicked() {
+        m.test_vibration = true;
+    }
 }
 
 fn lighting_editor(ui: &mut egui::Ui, m: &mut Mapping) {
@@ -619,8 +771,16 @@ fn macros_editor(ui: &mut egui::Ui, m: &mut Mapping) {
                     for (j, st) in mc.steps.iter_mut().enumerate() {
                         ui.push_id(j, |ui| {
                             ui.add(egui::DragValue::new(&mut st.delay_ms).range(0..=10_000).suffix(" мс"));
-                            pick(ui, "ev", &mut st.event, &macros::EVENTS, 100.0);
-                            pick(ui, "k", &mut st.key, &map::TARGETS[1..], 80.0);
+                            let was_stick = macros::is_stick(st.event);
+                            pick(ui, "ev", &mut st.event, &macros::EVENTS, 110.0);
+                            if was_stick != macros::is_stick(st.event) {
+                                st.key = if macros::is_stick(st.event) { 161 } else { 4 };
+                            }
+                            if macros::is_stick(st.event) {
+                                pick(ui, "k", &mut st.key, &macros::DIRECTIONS, 80.0);
+                            } else {
+                                pick(ui, "k", &mut st.key, &map::TARGETS[1..], 80.0);
+                            }
                             if ui.small_button("✕").clicked() {
                                 drop = Some(j);
                             }
@@ -679,6 +839,12 @@ impl eframe::App for App {
             }
         }
         ui.ctx().request_repaint_after(Duration::from_secs(1));
+        if self.vibration_stop.is_some_and(|t| Instant::now() >= t) {
+            self.vibration_stop = None;
+            self.call(proto::request(cmd::VIBRATION, &[0; 4]));
+        } else if self.vibration_stop.is_some() {
+            ui.ctx().request_repaint_after(Duration::from_millis(100));
+        }
         if self.dev.is_some() {
             self.set_test_mode(self.tab == Tab::Test);
         }

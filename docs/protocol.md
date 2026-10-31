@@ -33,11 +33,12 @@ Reply: `5a a5 CMD TOTAL INDEX DATA..`. Data starts at byte 5, or at byte 4 in th
 | `15` | precision | 1=8, 4=9, 2=10, 5=11, 3=12, 6=14, 7=16 bit |
 | `16` | sensitivity | 14 (highest) .. 20 (lowest), 17 = middle |
 | `17` | minutes | sleep time, 0 = never |
-| `18` | UTF-8 | write nickname |
+| `18` | UTF-8 | write nickname; the pad stores the payload with the checksum, so end the name with `00`, all `ff` = no name |
 | `1f` | chip | firmware upgrade mode (do not send) |
 | `a1` | - | profile info, byte 5 = active profile |
 | `a2` | id | apply profile 0..3 |
 | `a3` | id, size | read mapping config |
+| `af` | id | **reset all four profiles** to factory, whatever id is sent (measured), 10 s |
 | `a5` | n, data | write mapping config packet |
 | `a6` | version lo, hi | save mapping config |
 | `a7` | id, size | read RGB config |
@@ -88,7 +89,7 @@ commits the running profile to flash (up to 10 s). Verified on hardware.
 | 145 | 9 | grip vibration: master, per side {switch, min, max, strength %}; switches 0 = on, ff = off |
 | 154 | 29 | trigger motors: shared switch, per side 2 gears {type, min, max, threshold, min_start, strength %, min_time} |
 | 225 | 2 | change tag, LE, `ffff` = never written |
-| 770 | 20 | title, UTF-16 |
+| 770 | 20 | title, UTF-16LE, 10 chars, factory `配置N` |
 | 790 | 2 x 12 | stick table the pad plays: type, 9 points (output % + 50 at 0, 12.5 .. 100 % travel), circular, outer dead zone % |
 
 Stick type: 0 linear, 1 fast (p1 64,96), 2 slow (p1 64,32), 3 custom; p2 is 127,127 for presets.
@@ -116,7 +117,8 @@ is written there.
 
 Body: key id, step count u16, kind (1 once, 2 while held, 3 toggled), repeat pause u16 ms,
 6 x `ff`, 20-byte name, then per step: time since start u16 ms, key id, event (1 press, 0 release,
-2/3 sticks, 5 hold). The key's table entry must be `20 00 00`; a body left on a remapped key keeps playing.
+2/3 left/right stick with a direction as the key: 160 center, 161 up, 162 up-right .. 168 up-left,
+clockwise; 5 hold is never written by Space Station, its "hold" is a press and a release). The key's table entry must be `20 00 00`; a body left on a remapped key keeps playing.
 Verified on a Vader 5 Pro: a macro written this way plays from the button it is bound to.
 
 ## Lighting (per profile)
@@ -127,6 +129,11 @@ Vader 5 Pro: 320 bytes = 16 packets, 10 LEDs x 10 frames. Header: version u16 (`
 LED count, effect id (0 off, 1 flow, 3 breath, 4 solid, 5 multi, 6 rainbow, 7 wave, 8 flash), grip sync,
 then 10 x `ff`. Frames follow at 20, 3 bytes per LED. The pad only plays frames, effects are generated
 on the host. Factory: wave, brightness 20, period 4. Verified on a Vader 5 Pro, as are the vibration blocks above.
+
+## Factory profile
+
+`factory/` holds a slot as the pad ships it (mapping, macros, lighting), read after a reset; the slots
+differ only in the title digit. Writing it back is how one profile is reset without command `af`.
 
 ## Reproducing
 

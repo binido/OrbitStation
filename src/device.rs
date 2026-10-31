@@ -151,6 +151,16 @@ impl Device {
     }
 }
 
+impl Device {
+    /// Space Station's "Restore default" (ResetMappingConfigByCfgIdCommand, 10 s). Measured on a
+    /// Vader 5 Pro: whatever profile it names, **all four** profiles go back to factory.
+    pub fn reset_all_profiles(&mut self) -> Result<(), String> {
+        self.call_wait(proto::request(cmd::MAP_RESET, &[0]), Duration::from_secs(10))
+            .map(|_| ())
+            .ok_or_else(|| "геймпад не подтвердил сброс".into())
+    }
+}
+
 #[derive(Clone, PartialEq, Debug)]
 pub struct Profile {
     pub map: Vec<u8>,
@@ -158,10 +168,56 @@ pub struct Profile {
     pub rgb: Vec<u8>,
 }
 
+/// Profile file and backup format: `OSP1`, then mapping, macros and lighting, each with a u16 LE length.
+const FILE_MAGIC: &[u8; 4] = b"OSP1";
+
+impl Profile {
+    /// The profile every slot holds out of the box, read off a Vader 5 Pro; only the title's digit differs.
+    pub fn factory(cfg: u8) -> Profile {
+        let mut map = include_bytes!("../factory/vader5pro.map.bin").to_vec();
+        map::set_title(&mut map, &format!("配置{}", cfg + 1));
+        Profile {
+            map,
+            macros: include_bytes!("../factory/vader5pro.macros.bin").to_vec(),
+            rgb: include_bytes!("../factory/vader5pro.rgb.bin").to_vec(),
+        }
+    }
+
+    pub fn to_file(&self) -> Vec<u8> {
+        let mut out = FILE_MAGIC.to_vec();
+        for b in [&self.map, &self.macros, &self.rgb] {
+            out.extend_from_slice(&(b.len() as u16).to_le_bytes());
+            out.extend_from_slice(b);
+        }
+        out
+    }
+
+    pub fn from_file(data: &[u8]) -> Option<Profile> {
+        let mut rest = data.strip_prefix(FILE_MAGIC)?;
+        let mut next = || {
+            let n = u16::from_le_bytes([*rest.first()?, *rest.get(1)?]) as usize;
+            let blob = rest.get(2..2 + n)?.to_vec();
+            rest = &rest[2 + n..];
+            Some(blob)
+        };
+        Some(Profile { map: next()?, macros: next()?, rgb: next()? })
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
     use crate::proto::macros;
+
+    #[test]
+    fn profile_file_roundtrip() {
+        let p = Profile::factory(1);
+        assert_eq!((p.map.len(), p.macros.len(), p.rgb.len()), (map::SIZE, 1660, 320));
+        assert_eq!(map::title(&p.map), "配置2");
+        assert_eq!(Profile::from_file(&p.to_file()), Some(p.clone()));
+        assert_eq!(Profile::from_file(b"OSP1\x01"), None);
+        assert_eq!(Profile::from_file(&p.to_file()[..100]), None);
+    }
 
     /// Needs a wired Vader 5 Pro: `cargo test -- --ignored`. Profile 4 is changed and restored.
     #[test]
@@ -182,7 +238,13 @@ mod tests {
         proto::vibration::set(&mut new.map, proto::vibration::Vibration { grip_strength: 70, trig_on: !v.trig_on, ..v });
         proto::rgb::apply(&mut new.rgb, 1, &[[255, 0, 0], [0, 0, 255]]);
         map::set_version(&mut new.map, 0x1234);
-        let tap = vec![macros::Step { delay_ms: 0, key: 7, event: 1 }, macros::Step { delay_ms: 40, key: 7, event: 0 }];
+        let tap = vec![
+            macros::Step { delay_ms: 0, key: 7, event: 1 },
+            macros::Step { delay_ms: 40, key: 7, event: 0 },
+            macros::Step { delay_ms: 20, key: 161, event: 3 },
+            macros::Step { delay_ms: 200, key: 160, event: 3 },
+        ];
+        map::set_title(&mut new.map, "Тест");
         new.macros = macros::encode(&orig.macros, &[macros::Macro { key: 18, kind: 1, interval_ms: 0, steps: tap }]).unwrap();
         let check = |d: &mut Device, want: &Profile| -> Result<(), String> {
             let back = d.read_profile(3).ok_or("no readback")?;
