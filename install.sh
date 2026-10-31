@@ -65,8 +65,12 @@ rust=$(rustc --version | cut -d' ' -f2)
 version_ok "$rust" || die "нужен Rust $RUST_MIN или новее, сейчас $rust. Обнови: rustup update"
 have cc || die "нужен компилятор C для сборки (пакет gcc или clang)"
 
-# The checkout this script sits in, otherwise a clone kept for later updates.
-here=$(cd "$(dirname "$0")" 2>/dev/null && pwd) || here=
+# `sh install.sh` builds the checkout it sits in; piped (`curl | sh`, $0 is the shell) it always
+# takes GitHub, so a project folder that happens to be the current directory is never picked up.
+here=
+case "$0" in
+    *install.sh) [ -f "$0" ] && here=$(cd "$(dirname "$0")" && pwd) ;;
+esac
 if [ -n "$here" ] && grep -qs '^name = "orbitstation"' "$here/Cargo.toml"; then
     SRC=$here
     say "Собираю из $SRC"
