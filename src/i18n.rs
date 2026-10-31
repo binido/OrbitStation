@@ -3,7 +3,6 @@
 mod ru;
 
 use std::fmt::Display;
-use std::path::PathBuf;
 use std::sync::atomic::{AtomicU8, Ordering};
 
 /// `t!("Text")` is the translated text, `t!("Saved: {}", what)` fills each `{}` in order.
@@ -62,24 +61,14 @@ pub fn system() -> Lang {
     if locale.starts_with("ru") { Lang::Ru } else { Lang::En }
 }
 
-fn config_file() -> PathBuf {
-    std::env::var_os("XDG_CONFIG_HOME")
-        .map(PathBuf::from)
-        .or_else(|| std::env::var_os("HOME").map(|h| PathBuf::from(h).join(".config")))
-        .unwrap_or_else(|| PathBuf::from("."))
-        .join("orbitstation/language")
-}
-
 /// The language picked in the settings, or the system one until something is picked.
 pub fn load() -> Lang {
-    let saved = std::fs::read_to_string(config_file()).unwrap_or_default();
-    LANGS.iter().find(|l| l.1 == saved.trim()).map_or_else(system, |l| l.0)
+    let saved = crate::read_config("language").unwrap_or_default();
+    LANGS.iter().find(|l| l.1 == saved).map_or_else(system, |l| l.0)
 }
 
 pub fn save(lang: Lang) -> std::io::Result<()> {
-    let path = config_file();
-    std::fs::create_dir_all(path.parent().unwrap())?;
-    std::fs::write(path, LANGS.iter().find(|l| l.0 == lang).unwrap().1)
+    crate::write_config("language", LANGS.iter().find(|l| l.0 == lang).unwrap().1)
 }
 
 #[cfg(test)]

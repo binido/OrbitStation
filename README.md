@@ -23,6 +23,7 @@ Native Rust + egui, no Electron. Supported: **Flydigi Vader 5 Pro** over USB cab
 - Settings: stick auto-calibration, debounce, rebound, precision, center sensitivity,
   Home as Xbox Guide, quick profile switch, sleep time and more
 - English and Russian interface: follows the system language until one is picked in Settings
+- Interface scale in Settings (75-200% of the system scale), Ctrl + / Ctrl - / Ctrl 0 work too
 
 Before every write the previous
 profile is copied to `~/.local/share/orbitstation/backups` (`.osp` files, loadable from the profile tabs).

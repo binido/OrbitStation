@@ -188,6 +188,8 @@ pub fn ru(s: &str) -> Option<&'static str> {
         "the macros do not fit in the gamepad memory" => "макросы не помещаются в память геймпада",
         "a macro is longer than 65 seconds" => "макрос длиннее 65 секунд",
         "Language" => "Язык",
+        "Interface scale" => "Масштаб интерфейса",
+        "100% is the system scale. Ctrl + and Ctrl - work too, Ctrl 0 goes back to 100%." => "Масштаб 100% равен системному. Работают и Ctrl + / Ctrl -, Ctrl 0 возвращает 100%.",
         _ => return None,
     })
 }

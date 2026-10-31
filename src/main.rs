@@ -78,8 +78,13 @@ impl Mapping {
     }
 }
 
+/// Interface scale steps, on top of the system scale.
+const ZOOMS: [f32; 8] = [0.75, 0.9, 1.0, 1.1, 1.25, 1.5, 1.75, 2.0];
+
 struct App {
     dev: Option<Device>,
+    /// The zoom last saved, Ctrl +/- change it too.
+    zoom: f32,
     error: String,
     last_poll: Instant,
     info: Option<DeviceInfo>,
@@ -98,8 +103,14 @@ struct App {
 }
 
 impl App {
-    fn new() -> App {
+    fn new(ctx: &egui::Context) -> App {
+        // egui's text is smaller than a desktop's at the same scale (12.5 px body against ~14.5 px),
+        // so 100% here matches other apps.
+        ctx.all_styles_mut(|s| s.text_styles.values_mut().for_each(|f| f.size *= 1.16));
+        let zoom = read_config("zoom").and_then(|z| z.parse().ok()).filter(|z| (0.5..=3.0).contains(z)).unwrap_or(1.0);
+        ctx.set_zoom_factor(zoom);
         let mut app = App {
+            zoom,
             dev: None,
             error: String::new(),
             last_poll: Instant::now(),
@@ -436,6 +447,22 @@ impl App {
                 }
             }
         });
+        ui.horizontal(|ui| {
+            ui.label(t!("Interface scale"));
+            let mut zoom = ui.ctx().zoom_factor();
+            egui::ComboBox::from_id_salt("zoom")
+                .selected_text(format!("{:.0}%", zoom * 100.0))
+                .show_ui(ui, |ui| {
+                    for z in ZOOMS {
+                        ui.selectable_value(&mut zoom, z, format!("{:.0}%", z * 100.0));
+                    }
+                })
+                .response
+                .on_hover_text(t!("100% is the system scale. Ctrl + and Ctrl - work too, Ctrl 0 goes back to 100%."));
+            if zoom != ui.ctx().zoom_factor() {
+                ui.ctx().set_zoom_factor(zoom);
+            }
+        });
         ui.add_space(12.0);
         if self.dev.is_none() {
             return;
@@ -478,6 +505,24 @@ impl App {
         choice(ui, t!("Time until sleep"), &mut st.sleep_time, &proto::SLEEP_TIMES, cmd::SLEEP_TIME, self);
         self.status = Some(st);
     }
+}
+
+fn config_path(name: &str) -> PathBuf {
+    std::env::var_os("XDG_CONFIG_HOME")
+        .map(PathBuf::from)
+        .or_else(|| std::env::var_os("HOME").map(|h| PathBuf::from(h).join(".config")))
+        .unwrap_or_else(|| PathBuf::from("."))
+        .join("orbitstation")
+        .join(name)
+}
+
+/// One small file per setting in ~/.config/orbitstation.
+fn read_config(name: &str) -> Option<String> {
+    std::fs::read_to_string(config_path(name)).ok().map(|s| s.trim().to_string())
+}
+
+fn write_config(name: &str, value: &str) -> std::io::Result<()> {
+    write_file(&config_path(name), value.as_bytes())
 }
 
 fn data_dir() -> PathBuf {
@@ -846,6 +891,13 @@ fn stick(ui: &mut egui::Ui, title: &str, x: i16, y: i16, pressed: bool) {
 
 impl eframe::App for App {
     fn ui(&mut self, ui: &mut egui::Ui, _frame: &mut eframe::Frame) {
+        let zoom = ui.ctx().zoom_factor();
+        if zoom != self.zoom {
+            self.zoom = zoom;
+            if let Err(e) = write_config("zoom", &zoom.to_string()) {
+                self.note = t!("Could not save: {}", e);
+            }
+        }
         if self.dev.as_ref().is_some_and(|d| !d.is_alive()) {
             self.dev = None;
             self.error = t!("Gamepad disconnected").into();
@@ -934,5 +986,5 @@ fn main() -> eframe::Result {
             .with_icon(eframe::icon_data::from_png_bytes(include_bytes!("../assets/icons/orbitstation-128.png")).unwrap_or_default()),
         ..Default::default()
     };
-    eframe::run_native("OrbitStation", options, Box::new(|_| Ok(Box::new(App::new()))))
+    eframe::run_native("OrbitStation", options, Box::new(|cc| Ok(Box::new(App::new(&cc.egui_ctx)))))
 }
