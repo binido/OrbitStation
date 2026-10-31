@@ -110,6 +110,12 @@ impl App {
         // egui's text is smaller than a desktop's at the same scale (12.5 px body against ~14.5 px),
         // so 100% here matches other apps.
         ctx.all_styles_mut(|s| s.text_styles.values_mut().for_each(|f| f.size *= 1.16));
+        // Space Grotesk has no Cyrillic, egui's own font after it draws what it lacks.
+        let mut fonts = egui::FontDefinitions::default();
+        let grotesk = egui::FontData::from_static(include_bytes!("../assets/fonts/SpaceGrotesk-Regular.ttf"));
+        fonts.font_data.insert("SpaceGrotesk".into(), std::sync::Arc::new(grotesk));
+        fonts.families.entry(egui::FontFamily::Proportional).or_default().insert(0, "SpaceGrotesk".into());
+        ctx.set_fonts(fonts);
         let zoom = read_config("zoom").and_then(|z| z.parse().ok()).filter(|z| (0.5..=3.0).contains(z)).unwrap_or(1.0);
         ctx.set_zoom_factor(zoom);
         let mut app = App {
