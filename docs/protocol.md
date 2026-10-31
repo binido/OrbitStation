@@ -85,7 +85,8 @@ commits the running profile to flash (up to 10 s). Verified on hardware.
 | 109 | 2 x 7 | stick curve source: type, inner dead zone %, p1 x, p1 y, p2 x, p2 y, end (0..127 scale) |
 | 123 | 2 x 7 | trigger travel on 0..255: type, start, start, start, end, end, end (factory `0 0 0 0 255 255 255`) |
 | 137 | 8 | gyro to stick: target (0 off, 1 left, 2 right, 3 mouse), enable key, enable (0 toggle, 1 hold), dead zone, sens x, sens y, use mode (1 racer for left), second key (255 none) |
-| 145 | 9 | grip vibration |
+| 145 | 9 | grip vibration: master, per side {switch, min, max, strength %}; switches 0 = on, ff = off |
+| 154 | 29 | trigger motors: shared switch, per side 2 gears {type, min, max, threshold, min_start, strength %, min_time} |
 | 225 | 2 | change tag, LE, `ffff` = never written |
 | 770 | 20 | title, UTF-16 |
 | 790 | 2 x 12 | stick table the pad plays: type, 9 points (output % + 50 at 0, 12.5 .. 100 % travel), circular, outer dead zone % |

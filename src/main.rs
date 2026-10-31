@@ -4,7 +4,7 @@ mod proto;
 use device::{Device, Profile};
 use eframe::egui::{self, Color32, Pos2, Stroke, Vec2};
 use proto::macros::{self, Macro, Step};
-use proto::{DeviceInfo, HwStatus, Toggle, cmd, gyro, map, stick, trigger};
+use proto::{DeviceInfo, HwStatus, Toggle, cmd, gyro, map, stick, trigger, vibration};
 use std::path::PathBuf;
 use std::time::{Duration, Instant, SystemTime, UNIX_EPOCH};
 
@@ -15,6 +15,7 @@ enum Tab {
     Remap,
     Sticks,
     Gyro,
+    Vibration,
     Settings,
 }
 
@@ -459,6 +460,41 @@ fn gyro_editor(ui: &mut egui::Ui, m: &mut Mapping) {
     }
 }
 
+fn vibration_editor(ui: &mut egui::Ui, m: &mut Mapping) {
+    let old = vibration::get(&m.map);
+    let mut v = old;
+    let pct = |b: u8| (b as u32 * 100 / 255) as u8;
+    let byte = |p: u8| (p as u32 * 255 / 100) as u8;
+    ui.heading("Рукоятки");
+    ui.checkbox(&mut v.grip_on, "Вибрация рукояток");
+    ui.add_enabled(v.grip_on, egui::Slider::new(&mut v.grip_strength, 1..=100).text("сила, % (50 = как у Xbox)"));
+    ui.add_space(12.0);
+    ui.heading("Триггеры");
+    ui.checkbox(&mut v.trig_on, "Вибрация триггеров");
+    ui.add_enabled_ui(v.trig_on, |ui| {
+        ui.add(egui::Slider::new(&mut v.trig_strength, 1..=100).text("сила, %"));
+        ui.add(egui::Slider::new(&mut v.trig_threshold, 0..=100).text("порог: слабее него триггер молчит"));
+        for (side, name) in trigger::SIDES.iter().enumerate() {
+            let (lo, hi) = v.trig_window[side];
+            let (mut a, mut b) = (pct(lo), pct(hi));
+            ui.horizontal(|ui| {
+                ui.strong(*name);
+                ui.add(egui::Slider::new(&mut a, 0..=b).text("мин. амплитуда, %"));
+                ui.add(egui::Slider::new(&mut b, a..=100).text("макс. амплитуда, %"));
+            });
+            // Untouched values keep their exact bytes, the percent view rounds them.
+            if (a, b) != (pct(lo), pct(hi)) {
+                v.trig_window[side] = (byte(a), byte(b));
+            }
+        }
+    });
+    if v != old {
+        vibration::set(&mut m.map, v);
+    }
+    ui.add_space(8.0);
+    ui.label("Проверить вибрацию можно ползунками на вкладке «Тест кнопок» после записи.");
+}
+
 /// Draws the 9-point table the pad plays: travel to the right, output up, the diagonal for reference.
 fn curve_plot(ui: &mut egui::Ui, bank: &[u8; 9]) {
     let (rect, _) = ui.allocate_exact_size(Vec2::splat(180.0), egui::Sense::hover());
@@ -595,6 +631,7 @@ impl eframe::App for App {
                 (Tab::Remap, "Переназначение"),
                 (Tab::Sticks, "Стики"),
                 (Tab::Gyro, "Гироскоп"),
+                (Tab::Vibration, "Вибрация"),
                 (Tab::Settings, "Настройки"),
             ] {
                 ui.selectable_value(&mut self.tab, t, name);
@@ -615,6 +652,7 @@ impl eframe::App for App {
                 Tab::Remap => self.profile_tab(ui, remap_editor),
                 Tab::Sticks => self.profile_tab(ui, sticks_editor),
                 Tab::Gyro => self.profile_tab(ui, gyro_editor),
+                Tab::Vibration => self.profile_tab(ui, vibration_editor),
                 Tab::Settings => self.settings_tab(ui),
             });
         });
