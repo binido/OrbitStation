@@ -2,7 +2,13 @@
 
 use eframe::egui::{self, Color32, CornerRadius, Stroke, Theme};
 use std::collections::HashMap;
+use std::io::{BufRead, BufReader};
 use std::path::Path;
+use std::process::{Child, Command, Stdio};
+use std::sync::Arc;
+use std::sync::atomic::{AtomicBool, Ordering};
+use std::thread;
+use std::time::Duration;
 
 /// The libadwaita named colours the window is drawn with.
 #[derive(Clone, Copy)]
@@ -159,16 +165,73 @@ fn gnome_accent() -> Option<Color32> {
 
 /// `@define-color` entries of the user's gtk.css, GTK 4 first, imports followed.
 fn gtk_css() -> HashMap<String, Color32> {
+    css_sources().iter().map(|t| parse_css(t)).find(|c| !c.is_empty()).unwrap_or_default()
+}
+
+fn css_sources() -> [String; 2] {
     let home = crate::config_home();
-    ["gtk-4.0/gtk.css", "gtk-3.0/gtk.css"]
-        .iter()
-        .map(|f| {
-            let mut text = String::new();
-            read_css(&home.join(f), &mut text, 0);
-            parse_css(&text)
-        })
-        .find(|c| !c.is_empty())
-        .unwrap_or_default()
+    ["gtk-4.0/gtk.css", "gtk-3.0/gtk.css"].map(|f| {
+        let mut text = String::new();
+        read_css(&home.join(f), &mut text, 0);
+        text
+    })
+}
+
+/// Notices new colours: Noctalia and the like rewrite gtk.css when the wallpaper changes, GNOME
+/// reports a new accent through `gsettings monitor`.
+pub struct Watcher {
+    changed: Arc<AtomicBool>,
+    monitor: Option<Child>,
+}
+
+impl Watcher {
+    pub fn new(ctx: &egui::Context) -> Watcher {
+        let changed = Arc::new(AtomicBool::new(false));
+        let poke = {
+            let (changed, ctx) = (changed.clone(), ctx.clone());
+            move || {
+                changed.store(true, Ordering::Relaxed);
+                ctx.request_repaint();
+            }
+        };
+        let css_poke = poke.clone();
+        // ponytail: polls a few small files once a second, inotify if it ever shows up in a profile
+        thread::spawn(move || {
+            let mut last = css_sources();
+            loop {
+                thread::sleep(Duration::from_secs(1));
+                let now = css_sources();
+                if now != last {
+                    last = now;
+                    css_poke();
+                }
+            }
+        });
+        let mut monitor = Command::new("gsettings")
+            .args(["monitor", "org.gnome.desktop.interface", "accent-color"])
+            .stdout(Stdio::piped())
+            .stderr(Stdio::null())
+            .spawn()
+            .ok();
+        if let Some(out) = monitor.as_mut().and_then(|c| c.stdout.take()) {
+            thread::spawn(move || BufReader::new(out).lines().map_while(Result::ok).for_each(|_| poke()));
+        }
+        Watcher { changed, monitor }
+    }
+
+    /// True once after the colours changed.
+    pub fn changed(&self) -> bool {
+        self.changed.swap(false, Ordering::Relaxed)
+    }
+}
+
+impl Drop for Watcher {
+    fn drop(&mut self) {
+        if let Some(c) = &mut self.monitor {
+            let _ = c.kill();
+            let _ = c.wait();
+        }
+    }
 }
 
 /// Inlines `@import url("x.css");` lines, theme generators put their colours in an imported file.

@@ -25,7 +25,7 @@ Native Rust + egui, no Electron. Supported: **Flydigi Vader 5 Pro** over USB cab
 - English and Russian interface: follows the system language until one is picked in Settings
 - Interface scale in Settings (75-200% of the system scale), Ctrl + / Ctrl - / Ctrl 0 work too
 - GTK colours: the libadwaita palette, the GNOME accent colour and `@define-color` overrides from
-  `~/.config/gtk-4.0/gtk.css` (themes from Noctalia, matugen and the like are picked up); light or dark follows the system
+  `~/.config/gtk-4.0/gtk.css` (themes from Noctalia, matugen and the like are picked up, live); light or dark follows the system
 
 Before every write the previous
 profile is copied to `~/.local/share/orbitstation/backups` (`.osp` files, loadable from the profile tabs).

@@ -87,6 +87,7 @@ struct App {
     /// The zoom last saved, Ctrl +/- change it too.
     zoom: f32,
     colors: theme::Colors,
+    watcher: theme::Watcher,
     error: String,
     last_poll: Instant,
     info: Option<DeviceInfo>,
@@ -114,6 +115,7 @@ impl App {
         let mut app = App {
             zoom,
             colors: theme::apply(ctx),
+            watcher: theme::Watcher::new(ctx),
             dev: None,
             error: String::new(),
             last_poll: Instant::now(),
@@ -897,6 +899,9 @@ fn stick(ui: &mut egui::Ui, title: &str, x: i16, y: i16, pressed: bool) {
 
 impl eframe::App for App {
     fn ui(&mut self, ui: &mut egui::Ui, _frame: &mut eframe::Frame) {
+        if self.watcher.changed() {
+            self.colors = theme::apply(ui.ctx());
+        }
         let zoom = ui.ctx().zoom_factor();
         if zoom != self.zoom {
             self.zoom = zoom;
