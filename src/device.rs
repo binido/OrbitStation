@@ -170,6 +170,8 @@ mod tests {
         let mut new = orig.clone();
         map::set_key(&mut new.map, 18, map::Key { target: map::MACRO, turbo: 0, hz: 0 });
         map::set_key(&mut new.map, 4, map::Key { target: map::IDENTITY, turbo: 1, hz: 20 });
+        let left = proto::stick::get(&orig.map, 0);
+        proto::stick::set(&mut new.map, 0, proto::stick::Stick { kind: 1, center: 20, edge: 10, p1: (64, 96), ..left });
         map::set_version(&mut new.map, 0x1234);
         let tap = vec![macros::Step { delay_ms: 0, key: 7, event: 1 }, macros::Step { delay_ms: 40, key: 7, event: 0 }];
         new.macros = macros::encode(&orig.macros, &[macros::Macro { key: 18, kind: 1, interval_ms: 0, steps: tap }]).unwrap();

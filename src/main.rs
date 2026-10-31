@@ -4,7 +4,7 @@ mod proto;
 use device::{Device, Profile};
 use eframe::egui::{self, Color32, Pos2, Stroke, Vec2};
 use proto::macros::{self, Macro, Step};
-use proto::{DeviceInfo, HwStatus, Toggle, cmd, map};
+use proto::{DeviceInfo, HwStatus, Toggle, cmd, map, stick};
 use std::path::PathBuf;
 use std::time::{Duration, Instant, SystemTime, UNIX_EPOCH};
 
@@ -13,6 +13,7 @@ enum Tab {
     Device,
     Test,
     Remap,
+    Sticks,
     Settings,
 }
 
@@ -244,7 +245,8 @@ impl App {
         };
     }
 
-    fn remap_tab(&mut self, ui: &mut egui::Ui) {
+    /// Shows an editor of the loaded profile with the shared write controls under it.
+    fn profile_tab(&mut self, ui: &mut egui::Ui, editor: fn(&mut egui::Ui, &mut Mapping)) {
         if self.mapping.as_ref().is_none_or(|m| m.cfg != self.profile) {
             ui.label(format!("Профиль {} ещё не загружен.", self.profile + 1));
             if ui.button("Загрузить с геймпада").clicked() {
@@ -253,12 +255,9 @@ impl App {
             return;
         }
         let m = self.mapping.as_mut().unwrap();
-        ui.label(format!("Профиль {}. Кнопка слева будет нажимать то, что выбрано справа.", m.cfg + 1));
+        ui.label(format!("Профиль {}", m.cfg + 1));
         ui.add_space(8.0);
-        keys_grid(ui, m);
-        ui.add_space(12.0);
-        ui.heading("Макросы");
-        macros_editor(ui, m);
+        editor(ui, m);
         ui.add_space(12.0);
         let built = m.build();
         if let Err(e) = &built {
@@ -272,12 +271,6 @@ impl App {
             let m = self.mapping.as_mut().unwrap();
             if ui.add_enabled(dirty, egui::Button::new("Отменить изменения")).clicked() {
                 *m = Mapping::new(m.cfg, m.device.clone());
-            }
-            if ui.button("Кнопки по умолчанию").clicked() {
-                for (id, _) in map::KEYS {
-                    map::set_key(&mut m.map, id, map::Key { target: map::IDENTITY, turbo: 0, hz: 0 });
-                }
-                m.macros.clear();
             }
             if ui.button("Перечитать").clicked() {
                 self.load_mapping();
@@ -359,6 +352,67 @@ fn pick(ui: &mut egui::Ui, id: impl egui::AsIdSalt, value: &mut u8, list: &[(u8,
             ui.selectable_value(value, *v, *n);
         }
     });
+}
+
+fn remap_editor(ui: &mut egui::Ui, m: &mut Mapping) {
+    ui.label("Кнопка слева будет нажимать то, что выбрано справа.");
+    keys_grid(ui, m);
+    if ui.button("Кнопки по умолчанию").clicked() {
+        for (id, _) in map::KEYS {
+            map::set_key(&mut m.map, id, map::Key { target: map::IDENTITY, turbo: 0, hz: 0 });
+        }
+        m.macros.clear();
+    }
+    ui.add_space(12.0);
+    ui.heading("Макросы");
+    macros_editor(ui, m);
+}
+
+fn sticks_editor(ui: &mut egui::Ui, m: &mut Mapping) {
+    ui.horizontal_top(|ui| {
+        for side in 0..2 {
+            let old = stick::get(&m.map, side);
+            let mut s = old;
+            egui::Frame::group(ui.style()).show(ui, |ui| {
+                ui.vertical(|ui| {
+                    ui.heading(stick::SIDES[side]);
+                    curve_plot(ui, &stick::bank(&m.map, side));
+                    ui.horizontal(|ui| {
+                        ui.label("Кривая");
+                        pick(ui, ("curve", side), &mut s.kind, &stick::PRESETS, 110.0);
+                    });
+                    // Preset points are applied on a change only, a stored curve stays byte for byte.
+                    if let Some((p1, p2)) = stick::preset(s.kind) {
+                        if s.kind != old.kind {
+                            (s.p1, s.p2) = (p1, p2);
+                        }
+                    } else {
+                        ui.add(egui::Slider::new(&mut s.p1.0, 0..=127).text("точка 1: ход"));
+                        ui.add(egui::Slider::new(&mut s.p1.1, 0..=127).text("точка 1: отклик"));
+                        ui.add(egui::Slider::new(&mut s.p2.0, 0..=127).text("точка 2: ход"));
+                        ui.add(egui::Slider::new(&mut s.p2.1, 0..=127).text("точка 2: отклик"));
+                    }
+                    ui.add(egui::Slider::new(&mut s.center, 0..=100 - s.edge).text("мёртвая зона в центре, %"));
+                    ui.add(egui::Slider::new(&mut s.edge, 0..=100 - s.center).text("внешняя мёртвая зона, %"));
+                    ui.checkbox(&mut s.circular, "Круглая зона хода");
+                });
+            });
+            if s != old {
+                stick::set(&mut m.map, side, s);
+            }
+        }
+    });
+}
+
+/// Draws the 9-point table the pad plays: travel to the right, output up, the diagonal for reference.
+fn curve_plot(ui: &mut egui::Ui, bank: &[u8; 9]) {
+    let (rect, _) = ui.allocate_exact_size(Vec2::splat(180.0), egui::Sense::hover());
+    let p = ui.painter();
+    p.rect_stroke(rect, 2.0, Stroke::new(1.0, ui.visuals().weak_text_color()), egui::StrokeKind::Inside);
+    let at = |x: f32, y: f32| Pos2::new(rect.left() + x * rect.width(), rect.bottom() - y.clamp(0.0, 1.0) * rect.height());
+    p.line_segment([at(0.0, 0.0), at(1.0, 1.0)], Stroke::new(1.0, ui.visuals().weak_text_color()));
+    let pts: Vec<Pos2> = bank.iter().enumerate().map(|(i, v)| at(i as f32 / 8.0, (*v as f32 - 50.0) / 100.0)).collect();
+    p.add(egui::Shape::line(pts, Stroke::new(2.0, Color32::from_rgb(120, 200, 120))));
 }
 
 fn keys_grid(ui: &mut egui::Ui, m: &mut Mapping) {
@@ -484,6 +538,7 @@ impl eframe::App for App {
                 (Tab::Device, "Устройство"),
                 (Tab::Test, "Тест кнопок"),
                 (Tab::Remap, "Переназначение"),
+                (Tab::Sticks, "Стики"),
                 (Tab::Settings, "Настройки"),
             ] {
                 ui.selectable_value(&mut self.tab, t, name);
@@ -501,7 +556,8 @@ impl eframe::App for App {
             egui::ScrollArea::vertical().show(ui, |ui| match self.tab {
                 Tab::Device => self.device_tab(ui),
                 Tab::Test => self.test_tab(ui),
-                Tab::Remap => self.remap_tab(ui),
+                Tab::Remap => self.profile_tab(ui, remap_editor),
+                Tab::Sticks => self.profile_tab(ui, sticks_editor),
                 Tab::Settings => self.settings_tab(ui),
             });
         });
