@@ -126,7 +126,7 @@ Vader 5 Pro: 320 bytes = 16 packets, 10 LEDs x 10 frames. Header: version u16 (`
 (freezes the shown frame, leave 0), loop start, loop end, cycle time (bigger = slower), brightness 0..100,
 LED count, effect id (0 off, 1 flow, 3 breath, 4 solid, 5 multi, 6 rainbow, 7 wave, 8 flash), grip sync,
 then 10 x `ff`. Frames follow at 20, 3 bytes per LED. The pad only plays frames, effects are generated
-on the host. Factory: wave, brightness 20, period 4.
+on the host. Factory: wave, brightness 20, period 4. Verified on a Vader 5 Pro, as are the vibration blocks above.
 
 ## Reproducing
 
