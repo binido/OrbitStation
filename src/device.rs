@@ -173,6 +173,8 @@ mod tests {
         let left = proto::stick::get(&orig.map, 0);
         proto::stick::set(&mut new.map, 0, proto::stick::Stick { kind: 1, center: 20, edge: 10, p1: (64, 96), ..left });
         proto::trigger::set(&mut new.map, 1, 30, 200);
+        let g = proto::gyro::get(&orig.map);
+        proto::gyro::set(&mut new.map, proto::gyro::Gyro { target: 2, key: 10, enable: 1, sensitivity: 50, ..g });
         map::set_version(&mut new.map, 0x1234);
         let tap = vec![macros::Step { delay_ms: 0, key: 7, event: 1 }, macros::Step { delay_ms: 40, key: 7, event: 0 }];
         new.macros = macros::encode(&orig.macros, &[macros::Macro { key: 18, kind: 1, interval_ms: 0, steps: tap }]).unwrap();

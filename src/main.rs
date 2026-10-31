@@ -4,7 +4,7 @@ mod proto;
 use device::{Device, Profile};
 use eframe::egui::{self, Color32, Pos2, Stroke, Vec2};
 use proto::macros::{self, Macro, Step};
-use proto::{DeviceInfo, HwStatus, Toggle, cmd, map, stick, trigger};
+use proto::{DeviceInfo, HwStatus, Toggle, cmd, gyro, map, stick, trigger};
 use std::path::PathBuf;
 use std::time::{Duration, Instant, SystemTime, UNIX_EPOCH};
 
@@ -14,6 +14,7 @@ enum Tab {
     Test,
     Remap,
     Sticks,
+    Gyro,
     Settings,
 }
 
@@ -422,6 +423,42 @@ fn sticks_editor(ui: &mut egui::Ui, m: &mut Mapping) {
     }
 }
 
+fn gyro_editor(ui: &mut egui::Ui, m: &mut Mapping) {
+    ui.label("Наклон геймпада двигает выбранный стик. Работает в любой игре без программ на компьютере,");
+    ui.label("но только пока гироскоп включён кнопкой.");
+    ui.add_space(8.0);
+    let old = gyro::get(&m.map);
+    let mut g = old;
+    let mut keys = vec![(gyro::NO_KEY, "Нет")];
+    keys.extend(map::KEYS);
+    egui::Grid::new("gyro").num_columns(2).spacing([16.0, 8.0]).show(ui, |ui| {
+        ui.label("Гироскоп управляет");
+        pick(ui, "target", &mut g.target, &gyro::TARGETS, 200.0);
+        ui.end_row();
+        ui.label("Кнопка включения");
+        pick(ui, "key", &mut g.key, &keys, 200.0);
+        ui.end_row();
+        ui.label("Вторая кнопка");
+        pick(ui, "key2", &mut g.key2, &keys, 200.0);
+        ui.end_row();
+        ui.label("Как включается");
+        pick(ui, "enable", &mut g.enable, &gyro::ENABLE, 200.0);
+        ui.end_row();
+        ui.label("Чувствительность");
+        ui.add(egui::Slider::new(&mut g.sensitivity, 0..=100));
+        ui.end_row();
+        ui.label("Мёртвая зона");
+        ui.add(egui::Slider::new(&mut g.dead_zone, 0..=100));
+        ui.end_row();
+    });
+    if g.target != 0 && g.key == gyro::NO_KEY && g.key2 == gyro::NO_KEY {
+        ui.colored_label(ui.visuals().warn_fg_color, "Без кнопки включения гироскоп не заработает.");
+    }
+    if g != old {
+        gyro::set(&mut m.map, g);
+    }
+}
+
 /// Draws the 9-point table the pad plays: travel to the right, output up, the diagonal for reference.
 fn curve_plot(ui: &mut egui::Ui, bank: &[u8; 9]) {
     let (rect, _) = ui.allocate_exact_size(Vec2::splat(180.0), egui::Sense::hover());
@@ -557,6 +594,7 @@ impl eframe::App for App {
                 (Tab::Test, "Тест кнопок"),
                 (Tab::Remap, "Переназначение"),
                 (Tab::Sticks, "Стики"),
+                (Tab::Gyro, "Гироскоп"),
                 (Tab::Settings, "Настройки"),
             ] {
                 ui.selectable_value(&mut self.tab, t, name);
@@ -576,6 +614,7 @@ impl eframe::App for App {
                 Tab::Test => self.test_tab(ui),
                 Tab::Remap => self.profile_tab(ui, remap_editor),
                 Tab::Sticks => self.profile_tab(ui, sticks_editor),
+                Tab::Gyro => self.profile_tab(ui, gyro_editor),
                 Tab::Settings => self.settings_tab(ui),
             });
         });

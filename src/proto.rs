@@ -206,6 +206,40 @@ pub mod trigger {
     }
 }
 
+/// Gyro mapped to a stick, 8 bytes at 137 (m_fdg_macro_motion_mapping_struct_t): target, enable key,
+/// enable type, dead zone, sensitivity x, sensitivity y, use mode, second enable key. The pad does the
+/// mapping itself and only while an enable key turns it on.
+pub mod gyro {
+    const OFF: usize = 137;
+    /// MotionMapType. 3 (mouse) is done on the host by Space Station, so it is not offered.
+    pub const TARGETS: [(u8, &str); 3] = [(0, "Выключен"), (2, "Правый стик (прицел)"), (1, "Левый стик (руль)")];
+    /// MotionEnableType.
+    pub const ENABLE: [(u8, &str); 2] = [(1, "Пока зажата"), (0, "Вкл/выкл нажатием")];
+    /// ControllerKey.None.
+    pub const NO_KEY: u8 = 255;
+
+    #[derive(Clone, Copy, PartialEq, Debug)]
+    pub struct Gyro {
+        pub target: u8,
+        pub key: u8,
+        pub key2: u8,
+        pub enable: u8,
+        pub dead_zone: u8,
+        pub sensitivity: u8,
+    }
+
+    pub fn get(blob: &[u8]) -> Gyro {
+        let b = &blob[OFF..][..8];
+        Gyro { target: b[0], key: b[1], key2: b[7], enable: b[2], dead_zone: b[3], sensitivity: b[4].max(b[5]) }
+    }
+
+    /// Use mode follows the target as in Space Station's save path: left stick is Racer (1), else FPS (0).
+    pub fn set(blob: &mut [u8], g: Gyro) {
+        let mode = (g.target == 1) as u8;
+        blob[OFF..][..8].copy_from_slice(&[g.target, g.key, g.enable, g.dead_zone, g.sensitivity, g.sensitivity, mode, g.key2]);
+    }
+}
+
 /// Macro store of protocol 3.2 (MacroConfigParserV10), one per profile. Vader 5 Pro answers 83 packets,
 /// Space Station writes only the first 81 and the pad keeps the tail itself (the last 4 bytes stay 0).
 /// Header: version u16, count u16, ten u16 body offsets in 4-byte words after the header.
@@ -589,6 +623,17 @@ mod tests {
         trigger::set(&mut blob, 1, 200, 20);
         assert_eq!(blob[130..137], [0, 20, 20, 20, 200, 200, 200]);
         assert_eq!(trigger::get(&blob, 1), (20, 200));
+    }
+
+    #[test]
+    fn gyro_block() {
+        let mut blob = vec![0u8; map::SIZE];
+        // factory value read from a Vader 5 Pro: off, key LT, toggle, dead zone 4, sensitivity 25/20
+        blob[137..145].copy_from_slice(&[0, 12, 0, 4, 25, 20, 0, 0]);
+        let g = gyro::get(&blob);
+        assert_eq!((g.target, g.key, g.enable, g.dead_zone, g.sensitivity), (0, 12, 0, 4, 25));
+        gyro::set(&mut blob, gyro::Gyro { target: 1, key: 10, enable: 1, sensitivity: 60, ..g });
+        assert_eq!(blob[137..145], [1, 10, 1, 4, 60, 60, 1, 0]);
     }
 
     #[test]
