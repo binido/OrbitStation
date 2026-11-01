@@ -2,6 +2,7 @@
 //! device gets follows from its capabilities and its model's features.
 
 mod device;
+mod dock_lighting;
 mod gyro;
 mod lighting;
 mod profile;
@@ -41,6 +42,7 @@ pub fn kind_icon(kind: Kind) -> &'static str {
 pub enum Tab {
     Device,
     Test,
+    DockLighting,
     Remap,
     Sticks,
     Gyro,
@@ -51,7 +53,7 @@ pub enum Tab {
 
 impl Tab {
     /// Pages about the device itself.
-    pub const DEVICE: [Tab; 2] = [Tab::Device, Tab::Test];
+    pub const DEVICE: [Tab; 3] = [Tab::Device, Tab::Test, Tab::DockLighting];
     /// Pages that edit a profile slot.
     pub const PROFILE: [Tab; 5] = [Tab::Remap, Tab::Sticks, Tab::Gyro, Tab::Vibration, Tab::Lighting];
 
@@ -59,6 +61,7 @@ impl Tab {
         match self {
             Tab::Device => icon::GAMEPAD,
             Tab::Test => icon::HAND_TAP,
+            Tab::DockLighting => icon::LIGHTBULB,
             Tab::Remap => icon::SWAP,
             Tab::Sticks => icon::JOYSTICK,
             Tab::Gyro => icon::COMPASS,
@@ -72,6 +75,7 @@ impl Tab {
         match self {
             Tab::Device => t!("Device"),
             Tab::Test => t!("Button test"),
+            Tab::DockLighting => t!("Lighting"),
             Tab::Remap => t!("Remapping"),
             Tab::Sticks => t!("Sticks"),
             Tab::Gyro => t!("Gyro"),
@@ -93,6 +97,7 @@ impl Tab {
         match self {
             Tab::Device | Tab::Settings => true,
             Tab::Test => dev.live().is_some() && !dev.model().buttons.is_empty(),
+            Tab::DockLighting => dev.dock_lighting().is_some(),
             Tab::Remap => slots && (f.remap || f.macros),
             Tab::Sticks => slots && (f.sticks || f.triggers),
             Tab::Gyro => slots && f.gyro,
@@ -106,6 +111,7 @@ impl Tab {
         match self {
             Tab::Device => device::show(ui, dev, view),
             Tab::Test => test::show(ui, dev, view),
+            Tab::DockLighting => dock_lighting::show(ui, dev, view),
             Tab::Remap => profile::show(ui, dev, view, remap::editor),
             Tab::Sticks => profile::show(ui, dev, view, sticks::editor),
             Tab::Gyro => profile::show(ui, dev, view, gyro::editor),

@@ -5,11 +5,14 @@ use std::path::PathBuf;
 use std::time::{Duration, Instant};
 
 use super::storage;
+use crate::flydigi::dock_led::LedConfig;
 use crate::flydigi::profile::{self, Profile, ProfileError, macro_page, macros, rgb};
 use crate::station::{Device, Error, Info, Model, Settings};
 
 /// How often a connected device is asked whether it is still there.
 const POLL: Duration = Duration::from_secs(10);
+/// Time per window frame a lighting write may take, so the window keeps drawing.
+const UPLOAD_SLICE: Duration = Duration::from_millis(30);
 
 /// A profile as read from the device and as edited in the window.
 pub struct Mapping {
@@ -112,6 +115,10 @@ pub struct DeviceView {
     pub streaming: bool,
     /// Last outcome, for the status line.
     pub note: String,
+    /// The dock lighting being edited, read from the device first.
+    pub dock_led: Option<LedConfig>,
+    /// Share of a dock lighting write sent so far, while one runs.
+    pub upload: Option<f32>,
     last_poll: Option<Instant>,
 }
 
@@ -213,8 +220,24 @@ impl DeviceView {
         };
     }
 
-    /// Turns live input on while the test page of this device is open, and stops a timed rumble.
+    /// Turns live input on while the test page of this device is open, stops a timed rumble and
+    /// sends the next part of a lighting write.
     pub fn tick(&mut self, dev: &mut dyn Device, testing: bool) {
+        if self.upload.is_some()
+            && let Some(l) = dev.dock_lighting()
+        {
+            match l.step_lighting(UPLOAD_SLICE) {
+                Ok(done) if done >= 1.0 => {
+                    self.upload = None;
+                    self.note = t!("Lighting written").into();
+                }
+                Ok(done) => self.upload = Some(done),
+                Err(e) => {
+                    self.upload = None;
+                    self.note = e.to_string();
+                }
+            }
+        }
         let stop = self.rumble_stop.is_some_and(|t| Instant::now() >= t);
         let Some(live) = dev.live() else { return };
         if stop {

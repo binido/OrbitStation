@@ -2,8 +2,10 @@
 //! capability traits are the parts a model may or may not have; the app shows a page per capability.
 
 use std::path::Path;
+use std::time::Duration;
 
 use super::{Error, Model};
+use crate::flydigi::dock_led::LedConfig;
 use crate::flydigi::profile::Profile;
 
 /// Charge of a battery.
@@ -200,6 +202,33 @@ pub trait Device: Send {
     fn live(&mut self) -> Option<&mut dyn LiveInput> {
         None
     }
+
+    /// Lighting kept outside any profile and uploaded as frames, a dock's.
+    fn dock_lighting(&mut self) -> Option<&mut dyn DockLighting> {
+        None
+    }
+}
+
+/// Lighting a device plays from frames the host computes. An upload takes seconds, so it is sent a
+/// little at a time and the window stays responsive.
+pub trait DockLighting {
+    /// The effect the device has, without its frames: the device never returns them.
+    ///
+    /// # Errors
+    /// [`Error::NoReply`] when the device stays silent.
+    fn read_lighting(&mut self) -> Result<LedConfig, Error>;
+
+    /// Starts writing `config`; [`DockLighting::step_lighting`] sends it.
+    ///
+    /// # Errors
+    /// [`Error::NoReply`] when the device did not take the start.
+    fn start_lighting(&mut self, config: &LedConfig) -> Result<(), Error>;
+
+    /// Sends what fits in `budget` and returns the share sent, 1.0 once the write is complete.
+    ///
+    /// # Errors
+    /// [`Error::NoReply`] when a pack was not acknowledged; the write is then abandoned.
+    fn step_lighting(&mut self, budget: Duration) -> Result<f32, Error>;
 }
 
 /// Settings stored in the device outside the profiles.

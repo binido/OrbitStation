@@ -231,6 +231,22 @@ pub fn ru(s: &str) -> Option<&'static str> {
         "The device does not have this setting" => "У устройства нет такой настройки",
         "a name cannot be empty" => "имя не может быть пустым",
         "Unknown Flydigi dock" => "Неизвестная станция Flydigi",
+        "The dock plays a picture or Flydigi's own animation; pick an effect to replace it." => {
+            "Станция показывает картинку или фирменную анимацию Flydigi; выбери эффект, чтобы заменить её."
+        }
+        "Direction" => "Направление",
+        "Speed" => "Скорость",
+        "Brightness" => "Яркость",
+        "Writing the lighting…" => "Записываю подсветку…",
+        "Write to the dock" => "Записать на станцию",
+        "Lighting written" => "Подсветка записана",
+        "Pulse" => "Пульс",
+        "Color cycle" => "Смена цветов",
+        "Swirl" => "Вихрь",
+        "Right" => "Вправо",
+        "Left" => "Влево",
+        "Down" => "Вниз",
+        "Up" => "Вверх",
         _ => return None,
     })
 }

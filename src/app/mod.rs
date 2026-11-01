@@ -222,7 +222,9 @@ impl eframe::App for App {
         self.scan();
         self.poll();
         ui.ctx().request_repaint_after(Duration::from_secs(1));
-        if self.views.values().any(|v| v.rumble_stop.is_some()) {
+        if self.views.values().any(|v| v.upload.is_some()) {
+            ui.ctx().request_repaint();
+        } else if self.views.values().any(|v| v.rumble_stop.is_some()) {
             ui.ctx().request_repaint_after(Duration::from_millis(100));
         }
 

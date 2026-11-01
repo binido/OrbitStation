@@ -46,6 +46,14 @@ pub fn request(cmd: u8, payload: &[u8]) -> [u8; PKT] {
     p
 }
 
+/// A request with a payload longer than a 32-byte packet holds, for devices with bigger reports.
+pub fn request_long(cmd: u8, payload: &[u8]) -> Vec<u8> {
+    let mut p = vec![0x5a, 0xa5, cmd, 2 + payload.len() as u8];
+    p.extend_from_slice(payload);
+    p.push(p[2..].iter().fold(0u8, |s, b| s.wrapping_add(*b)));
+    p
+}
+
 /// Shortest reply: a numbered input report holds 31 bytes after its id, an unnumbered one 32.
 pub const MIN_REPLY: usize = 31;
 

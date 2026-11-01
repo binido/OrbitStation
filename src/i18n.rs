@@ -82,6 +82,7 @@ mod tests {
     use std::path::Path;
 
     use super::*;
+    use crate::flydigi::dock_led;
     use crate::flydigi::profile::{gyro, macros, map, rgb, stick};
     use crate::models;
     use crate::station::{Choice, Toggle};
@@ -126,7 +127,9 @@ mod tests {
 
     /// Names kept untranslated in tables and translated where they are shown.
     fn table_names() -> Vec<&'static str> {
-        let tables: [&[(u8, &str)]; 11] = [
+        let tables: [&[(u8, &str)]; 13] = [
+            &dock_led::EFFECTS,
+            &dock_led::DIRECTIONS,
             &models::VADER_5_PRO.targets[..1],
             &map::TURBO,
             &stick::PRESETS,

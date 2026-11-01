@@ -8,7 +8,7 @@ mod apex5;
 mod vader5_pro;
 
 use crate::flydigi::profile::map::IDENTITY;
-use crate::station::{Kind, Model};
+use crate::station::{Features, Kind, Model};
 
 pub use apex5::MODEL as APEX_5;
 pub use vader5_pro::MODEL as VADER_5_PRO;
@@ -56,6 +56,7 @@ pub const CD2: Model = Model {
     kind: Kind::Dock,
     device_ids: &[0, 1, 2, 3, 4],
     settings: true,
+    features: Features { lighting: true, ..Features::NONE },
     ..Model::INFO_ONLY
 };
 

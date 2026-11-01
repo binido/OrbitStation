@@ -14,7 +14,9 @@ Several devices can be connected at once; each gets the pages it supports.
 | Flydigi Vader 5 Pro | Tested on hardware | Everything below |
 | Flydigi Apex 5 | Not tested here, from openflydigi's measurements | Info, name, profiles, buttons, sticks, triggers, gyro, grip vibration, lighting, settings, live test, macros (up to five, inside the profile, 10 ms steps). Force triggers and the screen are not driven, no factory profile |
 | Flydigi Apex 6 / 6 Pro | Not tested | Info only: it speaks a newer dialect for the rest |
-| Flydigi CD2 charging dock | Not tested here, from openflydigi's measurements | Info, name, the four switches, whether a controller is seated and its charge. Dock lighting is not driven yet |
+| Flydigi CD2 charging dock | Not tested here, from openflydigi's measurements | Info, name, the four switches, whether a controller is seated and its charge, eight lighting effects with a live preview |
+
+What is left to port from openflydigi, and in which order: [docs/porting-openflydigi.md](docs/porting-openflydigi.md).
 
 Older Flydigi controllers (Vader 3 and 4, Apex 3 and 4, Direwolf) show up on Linux as a plain
 Xbox controller without Flydigi's vendor interface, so they cannot be configured from here.

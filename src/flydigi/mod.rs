@@ -3,6 +3,7 @@
 //! can do; [`dock`] is the charging dock, which shares the envelope and little else.
 
 pub mod dock;
+pub mod dock_led;
 pub mod frame;
 mod parse;
 pub mod profile;

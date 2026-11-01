@@ -1,17 +1,21 @@
 //! Flydigi's charging docks (CD2). The `5a a5` envelope on an unnumbered 64-byte report, with a
 //! command set of its own: a heartbeat with four switches, a name, and a status report pushed about
 //! once a second that says whether a controller is seated and how charged it is.
-//! Facts from openflydigi's measurements of a CD2 on firmware 0.0.3.9.
+//! Facts from openflydigi's measurements of a CD2 on firmware 0.0.3.9. Its lighting is
+//! [`super::dock_led`].
 
 use std::path::{Path, PathBuf};
 use std::sync::{Arc, Mutex, PoisonError};
-use std::time::Duration;
+use std::time::{Duration, Instant};
 
-use super::frame::{PKT, request};
+use super::dock_led::LedConfig;
+use super::frame::{PKT, request_long};
 use super::{DOCK_NIBBLE, VENDOR};
 use crate::models;
 use crate::station::hid::{Link, Node, Reports};
-use crate::station::{Battery, Choice, Device, Error, Family, HardwareSettings, Info, Model, Settings, Toggle};
+use crate::station::{
+    Battery, Choice, Device, DockLighting, Error, Family, HardwareSettings, Info, Model, Settings, Toggle,
+};
 
 /// The dock family for the station.
 pub const FAMILY: Family = Family { claims, open };
@@ -22,8 +26,11 @@ mod cmd {
     pub const LIGHTS_OFF_WHILE_CHARGING: u8 = 17;
     pub const LIGHTING_SYNC: u8 = 18;
     pub const OFF_WITH_COMPUTER: u8 = 19;
+    pub const READ_LED: u8 = 20;
     pub const SET_NICKNAME: u8 = 24;
     pub const CHARGE_ANIMATION: u8 = 25;
+    pub const WRITE_LED_START: u8 = 97;
+    pub const WRITE_LED_PACK: u8 = 98;
     /// Pushed by the dock, never asked for.
     pub const STATUS: u8 = 239;
 }
@@ -40,6 +47,10 @@ const NICKNAME_BYTES: usize = PKT - 6;
 const CHARGING_LEVEL: u8 = 6;
 /// Battery levels a controller reports, 0..5.
 const MAX_LEVEL: u8 = 5;
+/// Data bytes per lighting pack; every pack waits for its own ack.
+const PACK_BYTES: usize = 50;
+/// First byte of the lighting write's start command, as Space Station sends it.
+const LED_CONFIG_ID: u8 = 10;
 
 fn claims(node: &Node) -> bool {
     node.vendor == VENDOR && node.product >> 12 == DOCK_NIBBLE
@@ -56,6 +67,8 @@ pub struct DockDevice {
     link: Link,
     /// The seated controller's charge, `None` while the dock is empty, from the last status report.
     seated: Arc<Mutex<Option<Battery>>>,
+    /// A lighting write in progress: its packs and the next one to send.
+    upload: Option<(Vec<Vec<u8>>, usize)>,
 }
 
 impl DockDevice {
@@ -73,14 +86,15 @@ impl DockDevice {
             }
             None => false,
         })?;
-        let mut dock = DockDevice { path: path.to_path_buf(), model: &models::UNKNOWN_DOCK, link, seated };
+        let mut dock =
+            DockDevice { path: path.to_path_buf(), model: &models::UNKNOWN_DOCK, link, seated, upload: None };
         let reply = dock.exchange(cmd::HEARTBEAT, &[], PROBE_WAIT, 1).map_err(|_| Error::Silent(path.to_path_buf()))?;
-        dock.model = models::dock(reply[6]);
+        dock.model = models::dock(reply.get(6).copied().unwrap_or(u8::MAX));
         Ok(dock)
     }
 
     fn exchange(&self, command: u8, payload: &[u8], wait: Duration, tries: usize) -> Result<Vec<u8>, Error> {
-        let req = request(command, payload);
+        let req = request_long(command, payload);
         for _ in 0..tries {
             self.link.send(&req)?;
             // a dock's reply is as long as its payload, not a full report
@@ -186,6 +200,60 @@ impl Device for DockDevice {
 
     fn settings(&mut self) -> Option<&mut dyn HardwareSettings> {
         self.model.settings.then_some(self as &mut dyn HardwareSettings)
+    }
+
+    fn dock_lighting(&mut self) -> Option<&mut dyn DockLighting> {
+        self.model.features.lighting.then_some(self as &mut dyn DockLighting)
+    }
+}
+
+impl DockLighting for DockDevice {
+    fn read_lighting(&mut self) -> Result<LedConfig, Error> {
+        let reply = self.call(cmd::READ_LED, &[])?;
+        LedConfig::from_header(&reply).ok_or(Error::NoReply(cmd::READ_LED))
+    }
+
+    /// The pack count is the real one; Space Station advertises one more when the data divides by 50.
+    fn start_lighting(&mut self, config: &LedConfig) -> Result<(), Error> {
+        let packs: Vec<Vec<u8>> = config.serialise().chunks(PACK_BYTES).map(<[u8]>::to_vec).collect();
+        let [hi, lo] = (packs.len() as u16).to_be_bytes();
+        self.call(cmd::WRITE_LED_START, &[LED_CONFIG_ID, 0, 0, hi, lo])?;
+        self.upload = Some((packs, 0));
+        Ok(())
+    }
+
+    fn step_lighting(&mut self, budget: Duration) -> Result<f32, Error> {
+        let Some((packs, next)) = self.upload.as_mut() else { return Ok(1.0) };
+        let deadline = Instant::now() + budget;
+        let total = packs.len();
+        let [hi, lo] = (total as u16).to_be_bytes();
+        while *next < total && Instant::now() < deadline {
+            let [ihi, ilo] = (*next as u16).to_be_bytes();
+            let pack = &packs[*next];
+            let mut payload = vec![hi, lo, ihi, ilo, pack.len() as u8];
+            payload.extend_from_slice(pack);
+            let req = request_long(cmd::WRITE_LED_PACK, &payload);
+            let mut acked = false;
+            for _ in 0..TRIES {
+                self.link.send(&req)?;
+                if self.link.reply(REPLY_WAIT, |p| p.len() > 4 && p[..3] == [0x5a, 0xa5, cmd::WRITE_LED_PACK]).is_some()
+                {
+                    acked = true;
+                    break;
+                }
+            }
+            if !acked {
+                // the dock's frame memory now holds part of an animation; a whole new write fixes it
+                self.upload = None;
+                return Err(Error::NoReply(cmd::WRITE_LED_PACK));
+            }
+            *next += 1;
+        }
+        let done = *next as f32 / total.max(1) as f32;
+        if *next >= total {
+            self.upload = None;
+        }
+        Ok(done)
     }
 }
 
