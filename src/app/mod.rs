@@ -2,6 +2,7 @@
 //! device, and the bars around it.
 
 mod pages;
+mod picture;
 mod storage;
 pub mod theme;
 mod view;

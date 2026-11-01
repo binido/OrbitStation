@@ -17,10 +17,11 @@ pub const MAX_FRAMES: usize = 255;
 pub const PERIOD_MS: u32 = 20;
 
 /// Effects the dock is given, `ChargerLedType` ids. Default (2) plays a file Space Station installs
-/// and Custom (3) a picture, neither is computed here.
+/// and is not computed here; Custom (3) plays the frames of a picture.
 pub mod mode {
     pub const OFF: u8 = 0;
     pub const SOLID: u8 = 1;
+    pub const PICTURE: u8 = 3;
     pub const DIAGONAL_FLOW: u8 = 4;
     pub const BREATH: u8 = 5;
     pub const GRADIENT: u8 = 6;
@@ -30,7 +31,7 @@ pub mod mode {
 }
 
 /// Effects as (id, untranslated name), in Space Station's order.
-pub const EFFECTS: [(u8, &str); 8] = [
+pub const EFFECTS: [(u8, &str); 9] = [
     (mode::OFF, "Lights off"),
     (mode::SOLID, "Single color"),
     (mode::BREATH, "Breathing"),
@@ -39,6 +40,7 @@ pub const EFFECTS: [(u8, &str); 8] = [
     (mode::RAINBOW, "Rainbow"),
     (mode::WAVE_GRADIENT, "Wave"),
     (mode::DIAGONAL_FLOW, "Swirl"),
+    (mode::PICTURE, "Picture or GIF"),
 ];
 
 /// Directions the rainbow and the wave move in, `ChargerLedDirection` ids.
@@ -89,6 +91,8 @@ pub struct LedConfig {
     pub period: u8,
     pub direction: u8,
     pub colors: Vec<Rgb>,
+    /// The frames of a picture or GIF, used by [`mode::PICTURE`] only.
+    pub picture: Vec<[Rgb; LED_COUNT]>,
 }
 
 impl LedConfig {
@@ -104,7 +108,7 @@ impl LedConfig {
             mode::SOLID => (1, &[BLUE], 0),
             _ => (3, &[], 0),
         };
-        LedConfig { mode: effect, brightness, period, direction, colors: colors.to_vec() }
+        LedConfig { mode: effect, brightness, period, direction, colors: colors.to_vec(), picture: vec![] }
     }
 
     /// The header the dock answers command 20 with: mode, brightness, period, direction, colour
@@ -117,7 +121,7 @@ impl LedConfig {
         } else {
             vec![]
         };
-        Some(LedConfig { mode: b[4], brightness: b[5], period: b[6], direction: b[7], colors })
+        Some(LedConfig { mode: b[4], brightness: b[5], period: b[6], direction: b[7], colors, picture: vec![] })
     }
 
     fn color(&self, i: usize, fallback: Rgb) -> Rgb {
@@ -134,6 +138,7 @@ impl LedConfig {
             mode::WAVE_GRADIENT => wave(self.color(0, RED), self.color(1, DARK_BLUE), self.direction),
             mode::DIAGONAL_FLOW => swirl(self.color(0, RED), self.color(1, DARK_BLUE)),
             mode::PULSE => pulse(self.color(0, RED)),
+            mode::PICTURE if !self.picture.is_empty() => self.picture.clone(),
             _ => vec![[[0; 3]; LED_COUNT]],
         }
     }
@@ -299,6 +304,221 @@ fn pulse(color: Rgb) -> Vec<[Rgb; LED_COUNT]> {
         .collect()
 }
 
+/// Size of the canvas a picture is cropped to before its LEDs are read off it.
+pub const CANVAS: (usize, usize) = (334, 304);
+/// Most frames Space Station's own GIF page sends; the wire allows 255.
+pub const PICTURE_FRAMES: usize = 200;
+
+/// The pixel of the canvas each LED shows, row by row. Space Station's own table, transcribed as
+/// openflydigi did: it is not a lattice (the pitch slips by two pixels here and there), and a
+/// formula would move part of the picture by a pixel.
+const LED_PIXELS: [(usize, usize); LED_COUNT] = [
+    // row 0
+    (48, 32),
+    (66, 32),
+    (84, 32),
+    (104, 32),
+    (122, 32),
+    (140, 32),
+    (158, 32),
+    (176, 32),
+    (196, 32),
+    (214, 32),
+    (232, 32),
+    (250, 32),
+    (268, 32),
+    (288, 32),
+    // row 1
+    (38, 46),
+    (58, 46),
+    (76, 46),
+    (94, 46),
+    (112, 46),
+    (130, 46),
+    (150, 46),
+    (168, 46),
+    (186, 46),
+    (204, 46),
+    (222, 46),
+    (242, 46),
+    (260, 46),
+    (278, 46),
+    (296, 46),
+    // row 2
+    (30, 62),
+    (48, 62),
+    (66, 62),
+    (84, 62),
+    (104, 62),
+    (122, 62),
+    (140, 62),
+    (158, 62),
+    (176, 62),
+    (196, 62),
+    (214, 62),
+    (232, 62),
+    (250, 62),
+    (268, 62),
+    (288, 62),
+    (306, 62),
+    // row 3
+    (38, 78),
+    (58, 78),
+    (76, 78),
+    (94, 78),
+    (112, 78),
+    (130, 78),
+    (150, 78),
+    (168, 78),
+    (186, 78),
+    (204, 78),
+    (222, 78),
+    (242, 78),
+    (260, 78),
+    (278, 78),
+    (296, 78),
+    // row 4
+    (48, 94),
+    (66, 94),
+    (84, 94),
+    (104, 94),
+    (122, 94),
+    (140, 94),
+    (158, 94),
+    (176, 94),
+    (196, 94),
+    (214, 94),
+    (232, 94),
+    (250, 94),
+    (268, 94),
+    (288, 94),
+    // row 5
+    (58, 110),
+    (76, 110),
+    (94, 110),
+    (112, 110),
+    (130, 110),
+    (150, 110),
+    (168, 110),
+    (186, 110),
+    (204, 110),
+    (222, 110),
+    (242, 110),
+    (260, 110),
+    (278, 110),
+    // row 6
+    (66, 126),
+    (84, 126),
+    (104, 126),
+    (122, 126),
+    (140, 126),
+    (158, 126),
+    (176, 126),
+    (196, 126),
+    (214, 126),
+    (232, 126),
+    (250, 126),
+    (268, 126),
+    // row 7
+    (76, 142),
+    (94, 142),
+    (112, 142),
+    (130, 142),
+    (150, 142),
+    (168, 142),
+    (186, 142),
+    (204, 142),
+    (222, 142),
+    (242, 142),
+    (260, 142),
+    // row 8
+    (84, 158),
+    (104, 158),
+    (122, 158),
+    (140, 158),
+    (158, 158),
+    (176, 158),
+    (196, 158),
+    (214, 158),
+    (232, 158),
+    (250, 158),
+    // row 9
+    (94, 174),
+    (112, 174),
+    (130, 174),
+    (150, 174),
+    (168, 174),
+    (186, 174),
+    (204, 174),
+    (222, 174),
+    (242, 174),
+    // row 10
+    (104, 190),
+    (122, 190),
+    (140, 190),
+    (158, 190),
+    (176, 190),
+    (196, 190),
+    (214, 190),
+    (232, 190),
+    // row 11
+    (112, 206),
+    (130, 206),
+    (150, 206),
+    (168, 206),
+    (186, 206),
+    (204, 206),
+    (222, 206),
+    // row 12
+    (122, 222),
+    (140, 222),
+    (158, 222),
+    (176, 222),
+    (196, 222),
+    (214, 222),
+    // row 13
+    (130, 238),
+    (150, 238),
+    (168, 238),
+    (186, 238),
+    (204, 238),
+    // row 14
+    (140, 254),
+    (158, 254),
+    (176, 254),
+    (196, 254),
+    // row 15
+    (150, 270),
+    (168, 270),
+    (186, 270),
+];
+
+/// One frame from a canvas of [`CANVAS`] size, RGB, three bytes a pixel, rows unpadded: the nearest
+/// pixel per LED, as Space Station samples it.
+pub fn sample(rgb: &[u8]) -> Option<[Rgb; LED_COUNT]> {
+    if rgb.len() != CANVAS.0 * CANVAS.1 * 3 {
+        return None;
+    }
+    Some(LED_PIXELS.map(|(x, y)| {
+        let i = (y * CANVAS.0 + x) * 3;
+        [rgb[i], rgb[i + 1], rgb[i + 2]]
+    }))
+}
+
+/// A picture or GIF as the dock takes it: full brightness, frame time from the GIF's mean delay
+/// in the dock's 20 ms units (Space Station divides by 10, the dock plays it at 20).
+pub fn picture(frames: Vec<[Rgb; LED_COUNT]>, frame_ms: u32) -> LedConfig {
+    let period = (frame_ms + PERIOD_MS / 2) / PERIOD_MS;
+    LedConfig {
+        mode: mode::PICTURE,
+        brightness: 100,
+        period: period.clamp(1, 255) as u8,
+        direction: 0,
+        colors: vec![],
+        picture: frames.into_iter().take(PICTURE_FRAMES).collect(),
+    }
+}
+
 /// Centre of each LED in Space Station's 450x420 preview, for drawing the wedge.
 pub fn preview_positions() -> Vec<(f32, f32)> {
     positions()
@@ -347,7 +567,14 @@ mod tests {
 
     #[test]
     fn serialised_header_is_in_write_order() {
-        let c = LedConfig { mode: mode::SOLID, brightness: 80, period: 1, direction: 0, colors: vec![[1, 2, 3]] };
+        let c = LedConfig {
+            mode: mode::SOLID,
+            brightness: 80,
+            period: 1,
+            direction: 0,
+            colors: vec![[1, 2, 3]],
+            picture: vec![],
+        };
         let b = c.serialise();
         assert_eq!(b[..9], [1, 1, 80, mode::SOLID, 0, 1, 1, 2, 3]);
         assert_eq!(b.len(), 6 + 3 + LED_COUNT * 3);
@@ -358,5 +585,25 @@ mod tests {
         let p = [0x5a, 0xa5, 20, 0, 9, 50, 2, 1, 1, 22, 230, 249];
         let c = LedConfig::from_header(&p).expect("a header");
         assert_eq!((c.mode, c.brightness, c.period, c.direction, c.colors), (9, 50, 2, 1, vec![CYAN]));
+    }
+
+    #[test]
+    fn the_sampler_reads_one_pixel_per_led() {
+        let mut canvas = vec![0u8; CANVAS.0 * CANVAS.1 * 3];
+        // the top-left LED reads (48, 32), the bottom-right (186, 270)
+        canvas[(32 * CANVAS.0 + 48) * 3] = 200;
+        canvas[(270 * CANVAS.0 + 186) * 3 + 2] = 100;
+        let frame = sample(&canvas).expect("a full canvas");
+        assert_eq!((frame[0], frame[LED_COUNT - 1]), ([200, 0, 0], [0, 0, 100]));
+        assert_eq!(sample(&canvas[1..]), None);
+    }
+
+    #[test]
+    fn a_gif_keeps_its_pace_in_20_ms_units() {
+        let still = [[[1; 3]; LED_COUNT]];
+        assert_eq!(picture(still.to_vec(), 0).period, 1);
+        assert_eq!(picture(vec![still[0]; 300], 100).period, 5);
+        assert_eq!(picture(vec![still[0]; 300], 100).picture.len(), PICTURE_FRAMES);
+        assert_eq!(picture(still.to_vec(), 100).frames().len(), 1);
     }
 }

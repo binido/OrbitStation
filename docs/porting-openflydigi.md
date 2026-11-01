@@ -13,17 +13,16 @@ from openflydigi's measurements and marked as untested here.
 | Apex 5 screen settings | Status bar always on, keep the picture on the screen; both hidden on models without a screen |
 | Apex 5 force triggers | Effects stored in the profile, started after every write and profile switch; "Try on the controller" sends them live without storing |
 | Apex 6 / 6 Pro | Identity only |
-| CD2 dock | Info, name, four switches, seated controller's charge, eight computed lighting effects |
+| CD2 dock | Info, name, four switches, seated controller's charge, eight computed lighting effects, a picture or GIF (up to 200 frames, filled and cropped like Space Station's first framing) |
 
 ## Left, in order
 
 | # | Part | Size | Risk | Notes |
 |---|---|---|---|---|
-| 1 | Dock picture and GIF | medium | low | Needs an image decoder (a new dependency) and a crop view |
-| 2 | Per-game routes | large | medium | A background service: game detection, Flydigi's public trigger presets, Steam wrapper, Forza Data Out, DSX listener |
-| 3 | Virtual DualSense | large | medium | uhid relay; the USB/IP path and haptic audio need root, kernel modules and PipeWire config |
-| 4 | DualSense audio haptics to grip motors | medium | medium | Apex-specific upstream |
-| 5 | Apex 6 dialect | large | medium | Upstream itself is emulator-tested only |
+| 1 | Per-game routes | large | medium | A background service: game detection, Flydigi's public trigger presets, Steam wrapper, Forza Data Out, DSX listener |
+| 2 | Virtual DualSense | large | medium | uhid relay; the USB/IP path and haptic audio need root, kernel modules and PipeWire config |
+| 3 | DualSense audio haptics to grip motors | medium | medium | Apex-specific upstream |
+| 4 | Apex 6 dialect | large | medium | Upstream itself is emulator-tested only |
 
 ## Not planned
 

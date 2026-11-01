@@ -3,6 +3,7 @@
 
 use eframe::egui::{self, Color32, Pos2, RichText, Vec2};
 
+use super::super::picture;
 use super::super::view::DeviceView;
 use super::super::widgets::{self as ui_kit, icon};
 use super::pick;
@@ -26,8 +27,11 @@ pub fn show(ui: &mut egui::Ui, dev: &mut dyn Device, view: &mut DeviceView) {
         });
     }
     let Some(c) = view.dock_led.as_mut() else { return };
+    let mut view_note = None;
     ui_kit::card(ui, icon::PALETTE, t!("Effect"), |ui| {
-        let computable = dock_led::EFFECTS.iter().any(|e| e.0 == c.mode);
+        // a picture read back from the dock has no frames: the dock never returns them
+        let computable =
+            dock_led::EFFECTS.iter().any(|e| e.0 == c.mode) && (c.mode != mode::PICTURE || !c.picture.is_empty());
         if !computable {
             ui_kit::key(ui, t!("The dock plays a picture or Flydigi's own animation; pick an effect to replace it."));
         }
@@ -35,7 +39,13 @@ pub fn show(ui: &mut egui::Ui, dev: &mut dyn Device, view: &mut DeviceView) {
             ui_kit::key(ui, t!("Effect"));
             let mut effect = c.mode;
             pick(ui, "dock-effect", &mut effect, &dock_led::EFFECTS, 200.0);
-            if effect != c.mode {
+            if effect == mode::PICTURE && effect != c.mode {
+                match pick_picture() {
+                    Some(Ok(p)) => *c = p,
+                    Some(Err(e)) => view_note = Some(t!("Could not open the picture: {}", e)),
+                    None => {}
+                }
+            } else if effect != c.mode {
                 *c = LedConfig::defaults(effect, c.brightness.max(1));
             }
             ui.end_row();
@@ -87,6 +97,15 @@ pub fn show(ui: &mut egui::Ui, dev: &mut dyn Device, view: &mut DeviceView) {
         }
     });
     ui_kit::card(ui, icon::SPARKLE, t!("Animation preview"), |ui| preview(ui, c));
+    if let Some(n) = view_note {
+        view.note = n;
+    }
+}
+
+/// Asks for a picture with the desktop's file dialog; `None` when it was cancelled.
+fn pick_picture() -> Option<Result<LedConfig, String>> {
+    let path = rfd::FileDialog::new().add_filter(t!("Pictures"), &picture::EXTENSIONS).pick_file()?;
+    Some(picture::load(&path))
 }
 
 /// Plays the frames on the wedge at the speed the dock will.

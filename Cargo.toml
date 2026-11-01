@@ -6,6 +6,8 @@ rust-version = "1.95"
 
 [dependencies]
 eframe = "0.37"
+image = { version = "0.25.10", default-features = false, features = ["png", "jpeg", "gif", "webp"] }
+rfd = { version = "0.17.2", default-features = false, features = ["xdg-portal"] }
 thiserror = "2"
 
 [profile.release]

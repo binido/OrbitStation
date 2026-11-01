@@ -14,7 +14,7 @@ Several devices can be connected at once; each gets the pages it supports.
 | Flydigi Vader 5 Pro | Tested on hardware | Everything below |
 | Flydigi Apex 5 | Not tested here, from openflydigi's measurements | Info, name, profiles, buttons, sticks, triggers, gyro, grip vibration, lighting, settings, live test, macros (up to five, inside the profile, 10 ms steps), force-trigger effects (stored per profile and started after every write and switch, with a try button). Screen settings (status bar, keep the picture on); pictures are not uploaded, no factory profile |
 | Flydigi Apex 6 / 6 Pro | Not tested | Info only: it speaks a newer dialect for the rest |
-| Flydigi CD2 charging dock | Not tested here, from openflydigi's measurements | Info, name, the four switches, whether a controller is seated and its charge, eight lighting effects with a live preview |
+| Flydigi CD2 charging dock | Not tested here, from openflydigi's measurements | Info, name, the four switches, whether a controller is seated and its charge, eight lighting effects or a picture or GIF, with a live preview |
 
 What is left to port from openflydigi, and in which order: [docs/porting-openflydigi.md](docs/porting-openflydigi.md).
 

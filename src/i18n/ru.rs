@@ -279,6 +279,9 @@ pub fn ru(s: &str) -> Option<&'static str> {
             "Дальше этой точки курок сразу считается нажатым до конца."
         }
         "Keep the picture on the screen" => "Не гасить картинку на экране",
+        "Picture or GIF" => "Картинка или GIF",
+        "Could not open the picture: {}" => "Не удалось открыть картинку: {}",
+        "Pictures" => "Изображения",
         _ => return None,
     })
 }
