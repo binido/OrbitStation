@@ -1,6 +1,7 @@
 //! Space Station profiles: three blobs per slot (mapping, macros, lighting), their parts and the
 //! `.osp` file the app saves them to.
 
+pub mod force_trigger;
 pub mod gyro;
 pub mod macro_page;
 pub mod macros;

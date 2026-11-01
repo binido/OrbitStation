@@ -203,10 +203,24 @@ pub trait Device: Send {
         None
     }
 
+    /// Triggers that push back, `None` for a device without them.
+    fn force_triggers(&mut self) -> Option<&mut dyn ForceTriggers> {
+        None
+    }
+
     /// Lighting kept outside any profile and uploaded as frames, a dock's.
     fn dock_lighting(&mut self) -> Option<&mut dyn DockLighting> {
         None
     }
+}
+
+/// Force triggers. Their effects live in the profile and start only when sent live.
+pub trait ForceTriggers {
+    /// Starts the effects a mapping blob holds, without storing them.
+    ///
+    /// # Errors
+    /// [`Error::NoReply`] when the device did not take an effect.
+    fn engage(&mut self, map: &[u8]) -> Result<(), Error>;
 }
 
 /// Lighting a device plays from frames the host computes. An upload takes seconds, so it is sent a

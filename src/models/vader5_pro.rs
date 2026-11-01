@@ -58,6 +58,7 @@ pub const MODEL: Model = Model {
         gyro: true,
         vibration: true,
         trigger_motors: true,
+        force_triggers: false,
         lighting: true,
     },
     keys: KEYS,

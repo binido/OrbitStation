@@ -3,6 +3,7 @@
 
 mod device;
 mod dock_lighting;
+mod force_triggers;
 mod gyro;
 mod lighting;
 mod profile;
@@ -45,6 +46,7 @@ pub enum Tab {
     DockLighting,
     Remap,
     Sticks,
+    ForceTriggers,
     Gyro,
     Vibration,
     Lighting,
@@ -55,7 +57,8 @@ impl Tab {
     /// Pages about the device itself.
     pub const DEVICE: [Tab; 3] = [Tab::Device, Tab::Test, Tab::DockLighting];
     /// Pages that edit a profile slot.
-    pub const PROFILE: [Tab; 5] = [Tab::Remap, Tab::Sticks, Tab::Gyro, Tab::Vibration, Tab::Lighting];
+    pub const PROFILE: [Tab; 6] =
+        [Tab::Remap, Tab::Sticks, Tab::ForceTriggers, Tab::Gyro, Tab::Vibration, Tab::Lighting];
 
     pub fn icon(self) -> &'static str {
         match self {
@@ -64,6 +67,7 @@ impl Tab {
             Tab::DockLighting => icon::LIGHTBULB,
             Tab::Remap => icon::SWAP,
             Tab::Sticks => icon::JOYSTICK,
+            Tab::ForceTriggers => icon::TARGET,
             Tab::Gyro => icon::COMPASS,
             Tab::Vibration => icon::VIBRATE,
             Tab::Lighting => icon::LIGHTBULB,
@@ -78,6 +82,7 @@ impl Tab {
             Tab::DockLighting => t!("Lighting"),
             Tab::Remap => t!("Remapping"),
             Tab::Sticks => t!("Sticks"),
+            Tab::ForceTriggers => t!("Force triggers"),
             Tab::Gyro => t!("Gyro"),
             Tab::Vibration => t!("Vibration"),
             Tab::Lighting => t!("Lighting"),
@@ -100,6 +105,7 @@ impl Tab {
             Tab::DockLighting => dev.dock_lighting().is_some(),
             Tab::Remap => slots && (f.remap || f.macros),
             Tab::Sticks => slots && (f.sticks || f.triggers),
+            Tab::ForceTriggers => slots && f.force_triggers,
             Tab::Gyro => slots && f.gyro,
             Tab::Vibration => slots && f.vibration,
             Tab::Lighting => slots && f.lighting,
@@ -114,6 +120,7 @@ impl Tab {
             Tab::DockLighting => dock_lighting::show(ui, dev, view),
             Tab::Remap => profile::show(ui, dev, view, remap::editor),
             Tab::Sticks => profile::show(ui, dev, view, sticks::editor),
+            Tab::ForceTriggers => profile::show(ui, dev, view, force_triggers::editor),
             Tab::Gyro => profile::show(ui, dev, view, gyro::editor),
             Tab::Vibration => profile::show(ui, dev, view, vibration::editor),
             Tab::Lighting => profile::show(ui, dev, view, lighting::editor),

@@ -40,7 +40,8 @@ const BUTTONS: &[&str] = &[
 ];
 
 /// The Apex 5. Its macros live inside the mapping blob (protocol 3.1), up to five, timed in 10 ms
-/// steps. It has force triggers rather than trigger motors.
+/// steps. It has force triggers rather than trigger motors; their effects are stored in the profile
+/// and started after every write and profile switch.
 pub const MODEL: Model = Model {
     name: "Flydigi Apex 5",
     slug: "apex5",
@@ -58,6 +59,7 @@ pub const MODEL: Model = Model {
         gyro: true,
         vibration: true,
         trigger_motors: false,
+        force_triggers: true,
         lighting: true,
     },
     keys: KEYS,

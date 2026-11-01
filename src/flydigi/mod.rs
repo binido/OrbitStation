@@ -13,12 +13,13 @@ use std::sync::{Arc, Mutex, PoisonError};
 use std::time::Duration;
 
 use frame::{PKT, cmd, request};
-use profile::{Profile, map};
+use profile::{Profile, force_trigger, map};
 
 use crate::models;
 use crate::station::hid::{Link, Node, Reports};
 use crate::station::{
-    Choice, Device, Error, Family, HardwareSettings, Info, Input, LiveInput, Model, ProfileStore, Settings, Toggle,
+    Choice, Device, Error, Family, ForceTriggers, HardwareSettings, Info, Input, LiveInput, Model, ProfileStore,
+    Settings, Toggle,
 };
 
 /// The controller family for the station.
@@ -39,6 +40,8 @@ const FLASH_WAIT: Duration = Duration::from_secs(10);
 const PROBE_WAIT: Duration = Duration::from_millis(300);
 /// A bad packet is answered with silence, so a missing reply is retried.
 const TRIES: usize = 3;
+/// Pause between applying a profile and starting its force-trigger effects.
+const ENGAGE_DELAY: Duration = Duration::from_millis(500);
 
 /// A controller's command interface: Flydigi's ids and the vendor collection, which keeps its
 /// keyboard and mouse interface out. The model is told by the id the controller reports.
@@ -80,6 +83,13 @@ impl FlydigiDevice {
         let reply = device.exchange(&hello, PROBE_WAIT, 1).map_err(|_| Error::Silent(path.to_path_buf()))?;
         device.model = models::pad(parse::info(&reply).device_id);
         Ok(device)
+    }
+
+    /// Starts stored force-trigger effects once the pad has paged the profile in; Space Station waits
+    /// the same half second, and re-seating the trigger motors is audibly not instant.
+    fn start_effects(&mut self, map: &[u8]) -> Result<(), Error> {
+        std::thread::sleep(ENGAGE_DELAY);
+        ForceTriggers::engage(self, map)
     }
 
     /// Sends `req` and waits for the reply with the same command id, retrying `tries` times.
@@ -177,6 +187,10 @@ impl Device for FlydigiDevice {
     fn live(&mut self) -> Option<&mut dyn LiveInput> {
         self.model.live_input.then_some(self as &mut dyn LiveInput)
     }
+
+    fn force_triggers(&mut self) -> Option<&mut dyn ForceTriggers> {
+        self.model.features.force_triggers.then_some(self as &mut dyn ForceTriggers)
+    }
 }
 
 impl HardwareSettings for FlydigiDevice {
@@ -199,8 +213,15 @@ impl ProfileStore for FlydigiDevice {
         self.call(&request(cmd::PROFILE_INFO, &[])).map(|r| parse::active_profile(&r))
     }
 
+    /// On a model with force triggers the slot's stored effects are started too, as Space Station
+    /// does after a profile is applied; that costs a read of the mapping blob.
     fn activate(&mut self, slot: u8) -> Result<(), Error> {
-        self.call(&request(cmd::APPLY_PROFILE, &[slot])).map(drop)
+        self.call(&request(cmd::APPLY_PROFILE, &[slot]))?;
+        if self.model.features.force_triggers {
+            let map = self.read_blob(cmd::MAP_READ, slot)?;
+            self.start_effects(&map)?;
+        }
+        Ok(())
     }
 
     /// The pad switches to the slot while answering.
@@ -232,6 +253,15 @@ impl ProfileStore for FlydigiDevice {
     /// whatever profile it names, **all four** profiles go back to factory.
     fn reset_all(&mut self) -> Result<(), Error> {
         self.exchange(&request(cmd::MAP_RESET, &[0]), FLASH_WAIT, TRIES).map(drop)
+    }
+}
+
+impl ForceTriggers for FlydigiDevice {
+    fn engage(&mut self, map: &[u8]) -> Result<(), Error> {
+        for req in force_trigger::live_requests(map) {
+            self.call(&req)?;
+        }
+        Ok(())
     }
 }
 

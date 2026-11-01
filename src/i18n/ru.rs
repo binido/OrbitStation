@@ -247,6 +247,37 @@ pub fn ru(s: &str) -> Option<&'static str> {
         "Left" => "Влево",
         "Down" => "Вниз",
         "Up" => "Вверх",
+        "Force triggers" => "Силовые триггеры",
+        "No resistance" => "Без сопротивления",
+        "Racing" => "Гонка",
+        "Recoil" => "Отдача",
+        "Sniper" => "Снайпер",
+        "Trigger lock" => "Блок курка",
+        "Game rumble in the trigger" => "Вибрация игры в курке",
+        "Damping start position" => "Начало сопротивления",
+        "Damping strength" => "Сила сопротивления",
+        "Vibration start position" => "Начало вибрации",
+        "Start pressure" => "Нажим для запуска",
+        "Vibration strength" => "Сила вибрации",
+        "Vibration frequency" => "Частота вибрации",
+        "Match input to the start position" => "Отсчитывать нажатие от начала эффекта",
+        "Breakthrough start position" => "Начало прорыва",
+        "Breakthrough travel" => "Длина прорыва",
+        "Breakthrough resistance" => "Сила прорыва",
+        "Lock position" => "Точка блокировки",
+        "Intensity coefficient" => "Сила относительно рукояток",
+        "Vibration threshold" => "Порог вибрации",
+        "Travel range" => "Диапазон хода",
+        "Try on the controller" => "Попробовать на геймпаде",
+        "Starts the effects without writing them; writing the profile keeps them" => {
+            "Включает эффекты без записи; чтобы сохранить, запиши профиль"
+        }
+        "The effects are on the triggers until the profile is applied again" => {
+            "Эффекты включены, пока профиль не применят заново"
+        }
+        "Past this point the trigger reads fully pressed at once." => {
+            "Дальше этой точки курок сразу считается нажатым до конца."
+        }
         _ => return None,
     })
 }

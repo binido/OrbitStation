@@ -19,6 +19,8 @@ pub struct Features {
     pub vibration: bool,
     /// A motor in each trigger, the Vader line has them and the Apex line has force triggers instead.
     pub trigger_motors: bool,
+    /// Triggers that push back, with effects stored in the profile.
+    pub force_triggers: bool,
     pub lighting: bool,
 }
 
@@ -32,6 +34,7 @@ impl Features {
         gyro: false,
         vibration: false,
         trigger_motors: false,
+        force_triggers: false,
         lighting: false,
     };
 }

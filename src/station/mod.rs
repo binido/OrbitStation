@@ -11,7 +11,8 @@ use std::path::{Path, PathBuf};
 use std::time::{Duration, Instant};
 
 pub use device::{
-    Battery, Choice, Device, DockLighting, HardwareSettings, Info, Input, LiveInput, ProfileStore, Settings, Toggle,
+    Battery, Choice, Device, DockLighting, ForceTriggers, HardwareSettings, Info, Input, LiveInput, ProfileStore,
+    Settings, Toggle,
 };
 pub use error::Error;
 pub use model::{Factory, Features, Kind, Model};

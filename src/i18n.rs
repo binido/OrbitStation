@@ -83,7 +83,7 @@ mod tests {
 
     use super::*;
     use crate::flydigi::dock_led;
-    use crate::flydigi::profile::{gyro, macros, map, rgb, stick};
+    use crate::flydigi::profile::{force_trigger, gyro, macros, map, rgb, stick};
     use crate::models;
     use crate::station::{Choice, Toggle};
 
@@ -127,7 +127,8 @@ mod tests {
 
     /// Names kept untranslated in tables and translated where they are shown.
     fn table_names() -> Vec<&'static str> {
-        let tables: [&[(u8, &str)]; 13] = [
+        let tables: [&[(u8, &str)]; 14] = [
+            &force_trigger::EFFECTS,
             &dock_led::EFFECTS,
             &dock_led::DIRECTIONS,
             &models::VADER_5_PRO.targets[..1],
@@ -144,6 +145,7 @@ mod tests {
         ];
         let mut all: Vec<&str> = tables.iter().flat_map(|t| t.iter().map(|e| e.1)).collect();
         all.extend(stick::SIDES);
+        all.extend(force_trigger::EFFECTS.iter().flat_map(|e| force_trigger::knobs(e.0)).map(|k| k.name));
         all.extend([models::UNKNOWN.name, models::UNKNOWN_DOCK.name]);
         all.extend(Toggle::PAD.iter().chain(&Toggle::DOCK).map(|t| t.label()));
         all

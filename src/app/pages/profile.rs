@@ -39,6 +39,14 @@ pub fn show(ui: &mut egui::Ui, dev: &mut dyn Device, view: &mut DeviceView, edit
             Err(e) => view.note = e.to_string(),
         }
     }
+    if std::mem::take(&mut m.try_triggers)
+        && let Some(triggers) = dev.force_triggers()
+    {
+        view.note = match triggers.engage(&m.map) {
+            Ok(()) => t!("The effects are on the triggers until the profile is applied again").into(),
+            Err(e) => e.to_string(),
+        };
+    }
 }
 
 /// Write, discard and reload, in a bar that stays in view however long the page is.

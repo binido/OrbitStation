@@ -27,6 +27,8 @@ pub struct Mapping {
     pub colors: Vec<rgb::Rgb>,
     /// Set by the vibration editor, the app runs the motors for a second.
     pub test_vibration: bool,
+    /// Set by the force-trigger editor, the app starts the edited effects without storing them.
+    pub try_triggers: bool,
 }
 
 impl Mapping {
@@ -39,6 +41,7 @@ impl Mapping {
             rgb: device.rgb.clone(),
             colors: vec![[0, 116, 255]],
             test_vibration: false,
+            try_triggers: false,
             device,
         }
     }
