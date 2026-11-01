@@ -194,8 +194,14 @@ impl Device for FlydigiDevice {
 }
 
 impl HardwareSettings for FlydigiDevice {
+    /// The screen's two settings are left out on a model without a screen, as Space Station does;
+    /// a Vader still reports one of their bits.
     fn read(&mut self) -> Result<Settings, Error> {
-        self.call(&request(cmd::HW_STATUS, &[])).map(|r| parse::settings(&r))
+        let mut st = parse::settings(&self.call(&request(cmd::HW_STATUS, &[]))?);
+        if !self.model.features.screen {
+            st.toggles.retain(|t| !matches!(t.0, Toggle::ScreenStatusBar | Toggle::AlwaysOnDisplay));
+        }
+        Ok(st)
     }
 
     fn set_toggle(&mut self, toggle: Toggle, on: bool) -> Result<(), Error> {

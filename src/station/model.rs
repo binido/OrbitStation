@@ -21,6 +21,8 @@ pub struct Features {
     pub trigger_motors: bool,
     /// Triggers that push back, with effects stored in the profile.
     pub force_triggers: bool,
+    /// A screen on the controller; its two settings show only then.
+    pub screen: bool,
     pub lighting: bool,
 }
 
@@ -35,6 +37,7 @@ impl Features {
         vibration: false,
         trigger_motors: false,
         force_triggers: false,
+        screen: false,
         lighting: false,
     };
 }

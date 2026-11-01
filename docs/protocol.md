@@ -47,7 +47,7 @@ Reply: `5a a5 CMD TOTAL INDEX DATA..`. Data starts at byte 5, or at byte 4 in th
 | `f0`-`f7` | | factory tests |
 
 `13` sub-commands: 1 quick profile switch, 2 Home as Xbox Guide, 3 gyro debounce, 4 mapping switch,
-5 stick debounce, 6 stick auto-calibration, 7 stick rebound, 8 screen status bar, 9 screen off, 10 audio.
+5 stick debounce, 6 stick auto-calibration, 7 stick rebound, 8 screen status bar, 9 always-on display (named `OffScreen`, the picture stays up when on), 10 audio.
 
 ### `03` reply
 
@@ -55,7 +55,7 @@ Reply: `5a a5 CMD TOTAL INDEX DATA..`. Data starts at byte 5, or at byte 4 in th
 |---|---|
 | 5 | supported switches, bit `SUB-1` |
 | 6 | enabled switches, bit `SUB-1` |
-| 7, 8 | audio supported / enabled (bit 0) |
+| 7, 8 | second pair: bit 0 always-on display (sub 9, Space Station `OffScreen`), bit 1 audio (sub 10) |
 | 9 | sleep time |
 | 10 | report rate, 0 = not supported |
 | 11 | stick precision, 0 = not supported |

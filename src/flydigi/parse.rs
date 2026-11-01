@@ -4,8 +4,9 @@
 use super::frame::{PKT, cmd, request};
 use crate::station::{Battery, Choice, Info, Input, Settings, Toggle};
 
-/// Sub-command of 0x13 for a controller's toggle; its bit in the 0x03 reply is this minus one, Audio
-/// sits on bit 8. `None` for a dock's toggle.
+/// Sub-command of 0x13 for a controller's toggle; its bit in the 0x03 reply is this minus one, the
+/// upper ones in the second byte pair (Space Station's `ReadHardwareFunctionEnableStatus`). `None`
+/// for a dock's toggle.
 fn toggle_id(t: Toggle) -> Option<u8> {
     Some(match t {
         Toggle::QuickSwitchConfig => 1,
@@ -16,17 +17,14 @@ fn toggle_id(t: Toggle) -> Option<u8> {
         Toggle::JoystickAutoCalibration => 6,
         Toggle::JoystickRebound => 7,
         Toggle::ScreenStatusBar => 8,
+        Toggle::AlwaysOnDisplay => 9,
         Toggle::Audio => 10,
         _ => return None,
     })
 }
 
 fn toggle_bit(t: Toggle) -> u16 {
-    match toggle_id(t) {
-        Some(10) => 1 << 8,
-        Some(id) => 1 << (id - 1),
-        None => 0,
-    }
+    toggle_id(t).map_or(0, |id| 1 << (id - 1))
 }
 
 /// Request that switches a controller's toggle, `None` for a toggle controllers do not have.
@@ -69,8 +67,8 @@ pub fn info(p: &[u8]) -> Info {
 
 /// The 0x03 reply: the toggles the device supports and the choices it reports.
 pub fn settings(p: &[u8]) -> Settings {
-    let usable = p[5] as u16 | ((p[7] as u16 & 1) << 8);
-    let enabled = p[6] as u16 | ((p[8] as u16 & 1) << 8);
+    let usable = u16::from_le_bytes([p[5], p[7]]);
+    let enabled = u16::from_le_bytes([p[6], p[8]]);
     let toggles = Toggle::PAD
         .into_iter()
         .filter(|t| usable & toggle_bit(*t) != 0)
@@ -169,14 +167,28 @@ mod tests {
 
     #[test]
     fn settings_list_only_usable_toggles() {
+        // a Vader 5 Pro: the second pair says always-on display, not audio, as Space Station reads it
         let st = settings(&hex(
             "5a a5 03 01 00 fb 72 01 00 0f 00 02 11 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 94",
         ));
         let has = |t| st.toggles.iter().find(|x| x.0 == t).map(|x| x.1);
         assert_eq!(has(Toggle::JoystickRebound), Some(true));
         assert_eq!(has(Toggle::MotionDebounce), None);
-        assert_eq!(has(Toggle::Audio), Some(false));
+        assert_eq!(has(Toggle::AlwaysOnDisplay), Some(false));
+        assert_eq!(has(Toggle::Audio), None);
         assert_eq!(st.choices, vec![(Choice::Precision, 2), (Choice::Sensitivity, 17), (Choice::SleepTime, 15)]);
+    }
+
+    #[test]
+    fn apex_5_settings_with_its_screen() {
+        // openflydigi's capture of a wired Apex 5
+        let st = settings(&hex(
+            "5a a5 03 01 00 fb 7b 01 00 0f 00 02 11 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00",
+        ));
+        let has = |t| st.toggles.iter().find(|x| x.0 == t).map(|x| x.1);
+        assert_eq!(has(Toggle::ScreenStatusBar), Some(false));
+        assert_eq!(has(Toggle::AlwaysOnDisplay), Some(false));
+        assert_eq!(has(Toggle::QuickSwitchConfig), Some(true));
     }
 
     #[test]

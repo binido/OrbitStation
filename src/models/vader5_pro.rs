@@ -59,6 +59,7 @@ pub const MODEL: Model = Model {
         vibration: true,
         trigger_motors: true,
         force_triggers: false,
+        screen: false,
         lighting: true,
     },
     keys: KEYS,

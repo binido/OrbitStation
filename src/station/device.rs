@@ -57,6 +57,8 @@ pub enum Toggle {
     JoystickAutoCalibration,
     JoystickRebound,
     ScreenStatusBar,
+    /// Space Station calls it `OffScreen`, but on the bit the picture stays up rather than going dark.
+    AlwaysOnDisplay,
     Audio,
     // a dock's
     /// Space Station calls it "Intelligent start"; in practice it turns the lights of the dock and of
@@ -69,7 +71,7 @@ pub enum Toggle {
 
 impl Toggle {
     /// A controller's toggles, in the order the settings page lists them.
-    pub const PAD: [Toggle; 9] = [
+    pub const PAD: [Toggle; 10] = [
         Toggle::JoystickAutoCalibration,
         Toggle::JoystickDebounce,
         Toggle::JoystickRebound,
@@ -78,6 +80,7 @@ impl Toggle {
         Toggle::MappingSwitch,
         Toggle::XboxHomeButton,
         Toggle::ScreenStatusBar,
+        Toggle::AlwaysOnDisplay,
         Toggle::Audio,
     ];
 
@@ -100,6 +103,7 @@ impl Toggle {
             Toggle::JoystickAutoCalibration => t!("Stick auto-calibration"),
             Toggle::JoystickRebound => t!("Stick rebound algorithm"),
             Toggle::ScreenStatusBar => t!("Always show the on-screen status bar"),
+            Toggle::AlwaysOnDisplay => t!("Keep the picture on the screen"),
             Toggle::Audio => t!("Audio through the gamepad"),
             Toggle::DockLightsOffWhileCharging => t!("Lights off while a controller charges"),
             Toggle::DockLightingSync => t!("Lighting in step with the controller"),

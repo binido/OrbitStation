@@ -278,6 +278,7 @@ pub fn ru(s: &str) -> Option<&'static str> {
         "Past this point the trigger reads fully pressed at once." => {
             "Дальше этой точки курок сразу считается нажатым до конца."
         }
+        "Keep the picture on the screen" => "Не гасить картинку на экране",
         _ => return None,
     })
 }
