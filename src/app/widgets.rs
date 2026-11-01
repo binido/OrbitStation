@@ -1,4 +1,4 @@
-//! Building blocks of the window: Phosphor icons, page headers, cards and sidebar entries.
+//! Building blocks of the window: fonts, Phosphor icons, the title bar, cards and sidebar entries.
 
 use eframe::egui::{self, Align, CursorIcon, Layout, PointerButton, ResizeDirection, RichText, Vec2, ViewportCommand};
 
@@ -41,7 +41,27 @@ pub mod icon {
     pub const RESTORE: &str = "\u{e1ca}";
 }
 
-pub const FONT: &[u8] = include_bytes!("../assets/fonts/Phosphor-Regular-subset.ttf");
+/// Space Grotesk has no Cyrillic: Manrope (Regular, Cyrillic only) draws it; Phosphor goes before
+/// egui's own icon font, which uses the same private-use codepoints.
+const FONTS: [(&str, &[u8]); 3] = [
+    ("SpaceGrotesk", include_bytes!("../../assets/fonts/SpaceGrotesk-Regular.ttf")),
+    ("Manrope", include_bytes!("../../assets/fonts/Manrope-Regular-Cyrillic.ttf")),
+    ("Phosphor", include_bytes!("../../assets/fonts/Phosphor-Regular-subset.ttf")),
+];
+
+/// egui's text is smaller than a desktop's at the same scale (12.5 px body against ~14.5 px).
+const TEXT_SCALE: f32 = 1.16;
+
+/// Sets the fonts and text sizes, so 100% scale looks like other apps.
+pub fn install_fonts(ctx: &egui::Context) {
+    ctx.all_styles_mut(|s| s.text_styles.values_mut().for_each(|f| f.size *= TEXT_SCALE));
+    let mut fonts = egui::FontDefinitions::default();
+    for (i, (name, data)) in FONTS.into_iter().enumerate() {
+        fonts.font_data.insert(name.into(), std::sync::Arc::new(egui::FontData::from_static(data)));
+        fonts.families.entry(egui::FontFamily::Proportional).or_default().insert(i, name.into());
+    }
+    ctx.set_fonts(fonts);
+}
 
 /// `icon  text`, for buttons.
 pub fn label(icon: &str, text: &str) -> String {
@@ -103,7 +123,9 @@ fn window_button(ui: &mut egui::Ui, icon: &str, close: bool) -> egui::Response {
 pub fn resize_edges(ctx: &egui::Context) {
     const EDGE: f32 = 6.0;
     let full = ctx.input(|i| i.viewport().fullscreen.unwrap_or(false));
-    let Some(pos) = ctx.input(|i| i.pointer.hover_pos()) else { return };
+    let Some(pos) = ctx.input(|i| i.pointer.hover_pos()) else {
+        return;
+    };
     if full || maximized(ctx) {
         return;
     }
@@ -171,6 +193,5 @@ pub fn nav_section(ui: &mut egui::Ui, title: &str) {
 /// A full-width sidebar entry with its icon.
 pub fn nav_item(ui: &mut egui::Ui, selected: bool, icon: &str, text: &str) -> bool {
     let atoms = (RichText::new(icon).size(18.0), text, egui::Atom::grow());
-    ui.add(egui::Button::selectable(selected, atoms).min_size(Vec2::new(ui.available_width(), 36.0)))
-        .clicked()
+    ui.add(egui::Button::selectable(selected, atoms).min_size(Vec2::new(ui.available_width(), 36.0))).clicked()
 }

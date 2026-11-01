@@ -7,7 +7,9 @@ pub fn ru(s: &str) -> Option<&'static str> {
         "Could not apply: {}" => "Не удалось применить: {}",
         "Profile {}" => "Профиль {}",
         "profile {}" => "профиль {}",
-        "Could not back up profile {}, the reset is cancelled" => "Не удалось сохранить копию профиля {}, сброс отменён",
+        "Could not back up profile {}, the reset is cancelled" => {
+            "Не удалось сохранить копию профиля {}, сброс отменён"
+        }
         "All profiles reset, copies are in {}" => "Все профили сброшены, копии в {}",
         "Gyro" => "Гироскоп",
         "Accelerometer" => "Акселерометр",
@@ -21,8 +23,9 @@ pub fn ru(s: &str) -> Option<&'static str> {
         "Loaded from {}, press 'Write to gamepad'" => "Загружено из {}, нажми «Записать на геймпад»",
         "backup: {}" => "копия: {}",
         "{} does not answer, reconnect the gamepad" => "{} не отвечает, переподключи геймпад",
-        "No access to {}: {}. Install the udev rule from the README." => "Нет доступа к {}: {}. Установи udev-правило из README.",
-        "the gamepad did not accept packet {}" => "геймпад не принял пакет {}",
+        "No access to {}: {}. Install the udev rule from the README." => {
+            "Нет доступа к {}: {}. Установи udev-правило из README."
+        }
         "no more than {} macros" => "не больше {} макросов",
         "Default" => "По умолчанию",
         "Off" => "Выкл",
@@ -78,8 +81,12 @@ pub fn ru(s: &str) -> Option<&'static str> {
         "Profile" => "Профиль",
         "Refresh" => "Обновить",
         "Factory reset of all profiles" => "Сброс всех профилей",
-        "Like 'Restore default' in Space Station: all 4 profiles go back to factory settings. General settings stay as they are." => "Как «Restore default» в Space Station: все 4 профиля станут заводскими. Общие настройки не меняются.",
-        "Before the reset the app saves copies of all profiles, you can load them back from a file." => "Перед сбросом приложение сохранит копии всех профилей, их можно будет загрузить из файла.",
+        "Like 'Restore default' in Space Station: all 4 profiles go back to factory settings. General settings stay as they are." => {
+            "Как «Restore default» в Space Station: все 4 профиля станут заводскими. Общие настройки не меняются."
+        }
+        "Before the reset the app saves copies of all profiles, you can load them back from a file." => {
+            "Перед сбросом приложение сохранит копии всех профилей, их можно будет загрузить из файла."
+        }
         "I understand that all 4 profiles will be erased" => "Понимаю, что все 4 профиля будут стёрты",
         "Reset all profiles" => "Сбросить все профили",
         "Triggers" => "Триггеры",
@@ -89,7 +96,9 @@ pub fn ru(s: &str) -> Option<&'static str> {
         "LT motor" => "мотор LT",
         "RT motor" => "мотор RT",
         "Could not read the profile" => "Не удалось прочитать профиль",
-        "Written, but the check read did not match, load the profile again" => "Записано, но проверочное чтение не совпало, загрузи профиль заново",
+        "Written, but the check read did not match, load the profile again" => {
+            "Записано, но проверочное чтение не совпало, загрузи профиль заново"
+        }
         "Load from gamepad" => "Загрузить с геймпада",
         "Write to gamepad" => "Записать на геймпад",
         "Discard changes" => "Отменить изменения",
@@ -97,7 +106,9 @@ pub fn ru(s: &str) -> Option<&'static str> {
         "Profile name, up to 10 characters" => "Название профиля, до 10 символов",
         "Factory profile" => "Заводской профиль",
         "Only this profile, the others stay untouched" => "Только этот профиль, остальные не трогаются",
-        "Factory values filled in, press 'Write to gamepad'" => "Заводские значения подставлены, нажми «Записать на геймпад»",
+        "Factory values filled in, press 'Write to gamepad'" => {
+            "Заводские значения подставлены, нажми «Записать на геймпад»"
+        }
         "Save to file" => "Сохранить в файл",
         "choose a file" => "выбери файл",
         "Load from file" => "Загрузить из файла",
@@ -108,7 +119,9 @@ pub fn ru(s: &str) -> Option<&'static str> {
         "Stick precision" => "Точность стиков",
         "Sensitivity near the stick center" => "Чувствительность в центре стика",
         "Time until sleep" => "Время до сна",
-        "The button on the left presses what is chosen on the right." => "Кнопка слева будет нажимать то, что выбрано справа.",
+        "The button on the left presses what is chosen on the right." => {
+            "Кнопка слева будет нажимать то, что выбрано справа."
+        }
         "Default buttons" => "Кнопки по умолчанию",
         "Macros" => "Макросы",
         "Curve" => "Кривая",
@@ -120,10 +133,14 @@ pub fn ru(s: &str) -> Option<&'static str> {
         "outer dead zone, %" => "внешняя мёртвая зона, %",
         "Circular travel area" => "Круглая зона хода",
         "Trigger travel" => "Ход триггеров",
-        "The game gets a full press at the end of the chosen range and nothing before its start." => "Игра получает полное нажатие уже в конце выбранного участка, а до начала триггер молчит.",
+        "The game gets a full press at the end of the chosen range and nothing before its start." => {
+            "Игра получает полное нажатие уже в конце выбранного участка, а до начала триггер молчит."
+        }
         "start, %" => "начало, %",
         "full press, %" => "полное нажатие, %",
-        "Tilting the gamepad moves the chosen stick. It works in any game with no software on the computer," => "Наклон геймпада двигает выбранный стик. Работает в любой игре без программ на компьютере,",
+        "Tilting the gamepad moves the chosen stick. It works in any game with no software on the computer," => {
+            "Наклон геймпада двигает выбранный стик. Работает в любой игре без программ на компьютере,"
+        }
         "but only while the gyro is turned on with a button." => "но только пока гироскоп включён кнопкой.",
         "None" => "Нет",
         "Gyro controls" => "Гироскоп управляет",
@@ -148,7 +165,9 @@ pub fn ru(s: &str) -> Option<&'static str> {
         "brightness, %" => "яркость, %",
         "cycle time (higher = slower)" => "время цикла (больше = медленнее)",
         "Lighting reacts to vibration" => "Подсветка реагирует на вибрацию",
-        "Animation frames the gamepad plays (top to bottom):" => "Кадры анимации, которые проигрывает геймпад (сверху вниз):",
+        "Animation frames the gamepad plays (top to bottom):" => {
+            "Кадры анимации, которые проигрывает геймпад (сверху вниз):"
+        }
         "Button" => "Кнопка",
         "Presses" => "Нажимает",
         "Turbo" => "Турбо",
@@ -167,11 +186,6 @@ pub fn ru(s: &str) -> Option<&'static str> {
         "Lighting" => "Подсветка",
         "Settings" => "Настройки",
         "Waiting for the gamepad…" => "Ожидание геймпада…",
-        "Vader 5 Pro gamepad not found (connect it with a cable)" => "Геймпад Vader 5 Pro не найден (подключи его кабелем)",
-        "the gamepad did not accept the start of the write" => "геймпад не принял начало записи",
-        "the gamepad did not confirm the save" => "геймпад не подтвердил сохранение",
-        "the gamepad did not apply the profile" => "геймпад не применил профиль",
-        "the gamepad did not confirm the reset" => "геймпад не подтвердил сброс",
         "Quick profile switching" => "Быстрое переключение профилей",
         "Home button as Xbox Guide" => "Кнопка Home как Xbox Guide",
         "Gyro jitter filter" => "Подавление дрожания гироскопа",
@@ -186,7 +200,9 @@ pub fn ru(s: &str) -> Option<&'static str> {
         "a macro is longer than 65 seconds" => "макрос длиннее 65 секунд",
         "Language" => "Язык",
         "Interface scale" => "Масштаб интерфейса",
-        "100% is the system scale. Ctrl + and Ctrl - work too, Ctrl 0 goes back to 100%." => "Масштаб 100% равен системному. Работают и Ctrl + / Ctrl -, Ctrl 0 возвращает 100%.",
+        "100% is the system scale. Ctrl + and Ctrl - work too, Ctrl 0 goes back to 100%." => {
+            "Масштаб 100% равен системному. Работают и Ctrl + / Ctrl -, Ctrl 0 возвращает 100%."
+        }
         "Gamepad" => "Геймпад",
         "Active profile" => "Активный профиль",
         "Sticks and triggers" => "Стики и триггеры",
@@ -203,6 +219,8 @@ pub fn ru(s: &str) -> Option<&'static str> {
         "Animation preview" => "Предпросмотр анимации",
         "Add a button press" => "Добавить нажатие",
         "Add macro" => "Добавить макрос",
+        "Devices" => "Устройства",
+        "No Flydigi device found (connect it with a cable)" => "Устройство Flydigi не найдено (подключи его кабелем)",
         _ => return None,
     })
 }

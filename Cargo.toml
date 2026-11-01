@@ -6,6 +6,7 @@ rust-version = "1.95"
 
 [dependencies]
 eframe = "0.37"
+thiserror = "2"
 
 [profile.release]
 strip = true

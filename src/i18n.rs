@@ -26,6 +26,11 @@ pub const LANGS: [(Lang, &str, &str); 2] = [(Lang::En, "en", "English"), (Lang::
 
 static CURRENT: AtomicU8 = AtomicU8::new(Lang::En as u8);
 
+/// The name of `lang` in its own language.
+pub fn name(lang: Lang) -> &'static str {
+    LANGS.iter().find(|l| l.0 == lang).map_or("English", |l| l.2)
+}
+
 pub fn current() -> Lang {
     if CURRENT.load(Ordering::Relaxed) == Lang::Ru as u8 { Lang::Ru } else { Lang::En }
 }
@@ -63,23 +68,42 @@ pub fn system() -> Lang {
 
 /// The language picked in the settings, or the system one until something is picked.
 pub fn load() -> Lang {
-    let saved = crate::read_config("language").unwrap_or_default();
+    let saved = crate::app::read_config("language").unwrap_or_default();
     LANGS.iter().find(|l| l.1 == saved).map_or_else(system, |l| l.0)
 }
 
 pub fn save(lang: Lang) -> std::io::Result<()> {
-    crate::write_config("language", LANGS.iter().find(|l| l.0 == lang).unwrap().1)
+    let code = LANGS.iter().find(|l| l.0 == lang).map_or("en", |l| l.1);
+    crate::app::write_config("language", code)
 }
 
 #[cfg(test)]
 mod tests {
-    use super::*;
-    use crate::proto::{self, Toggle, gyro, macros, map, rgb, stick};
+    use std::path::Path;
 
-    /// Every `t!("…")` in the sources, read from the files so a new string cannot slip by untranslated.
+    use super::*;
+    use crate::flydigi::profile::{gyro, macros, map, rgb, stick};
+    use crate::models;
+    use crate::station::{Choice, Toggle};
+
+    /// Rust sources under `dir`, read from disk so a new file cannot slip by.
+    fn sources(dir: &Path, out: &mut Vec<String>) {
+        for entry in std::fs::read_dir(dir).expect("src is readable").flatten() {
+            let path = entry.path();
+            if path.is_dir() {
+                sources(&path, out);
+            } else if path.extension().is_some_and(|e| e == "rs") && !path.ends_with("i18n.rs") {
+                out.push(std::fs::read_to_string(&path).expect("a source file is readable"));
+            }
+        }
+    }
+
+    /// Every `t!("…")` in the sources.
     fn literals() -> Vec<String> {
+        let mut files = vec![];
+        sources(&Path::new(env!("CARGO_MANIFEST_DIR")).join("src"), &mut files);
         let mut out = vec![];
-        for src in [include_str!("main.rs"), include_str!("device.rs"), include_str!("proto.rs")] {
+        for src in &files {
             for (at, m) in src.match_indices("t!(\"") {
                 // `format!("` ends the same way
                 if src[..at].ends_with(|c: char| c.is_alphanumeric() || c == '_') {
@@ -100,20 +124,42 @@ mod tests {
         out
     }
 
+    /// Names kept untranslated in tables and translated where they are shown.
+    fn table_names() -> Vec<&'static str> {
+        let tables: [&[(u8, &str)]; 11] = [
+            &models::VADER_5_PRO.targets[..1],
+            &map::TURBO,
+            &stick::PRESETS,
+            &gyro::TARGETS,
+            &gyro::ENABLE,
+            &rgb::EFFECTS,
+            &macros::KINDS,
+            &macros::EVENTS,
+            &macros::DIRECTIONS[8..],
+            Choice::SleepTime.options(),
+            Choice::Sensitivity.options(),
+        ];
+        let mut all: Vec<&str> = tables.iter().flat_map(|t| t.iter().map(|e| e.1)).collect();
+        all.extend(stick::SIDES);
+        all.push(models::UNKNOWN.name);
+        all.extend(Toggle::ALL.iter().map(|t| t.label()));
+        all
+    }
+
     #[test]
     fn every_string_has_russian() {
         let mut all = literals();
-        let tables: [&[(u8, &str)]; 11] = [
-            &map::TARGETS[..1], &map::TURBO, &stick::PRESETS, &gyro::TARGETS, &gyro::ENABLE, &rgb::EFFECTS,
-            &macros::KINDS, &macros::EVENTS, &macros::DIRECTIONS[8..], &proto::SLEEP_TIMES, &proto::SENSITIVITIES,
-        ];
-        all.extend(tables.iter().flat_map(|t| t.iter().map(|e| e.1.to_string())));
-        all.extend(stick::SIDES.iter().map(|s| s.to_string()));
-        all.extend(Toggle::ALL.iter().map(|t| t.label().to_string()));
+        all.extend(table_names().into_iter().map(String::from));
         let missing: Vec<_> = all.iter().filter(|s| ru::ru(s).is_none()).collect();
         assert!(missing.is_empty(), "no Russian for {missing:?}");
-        for s in &all {
-            assert_eq!(s.matches("{}").count(), ru::ru(s).unwrap().matches("{}").count(), "placeholders differ in {s:?}");
+    }
+
+    #[test]
+    fn translations_keep_their_placeholders() {
+        let mut all = literals();
+        all.extend(table_names().into_iter().map(String::from));
+        for s in all.iter().filter_map(|s| Some((s, ru::ru(s)?))) {
+            assert_eq!(s.0.matches("{}").count(), s.1.matches("{}").count(), "placeholders differ in {:?}", s.0);
         }
     }
 

@@ -34,6 +34,19 @@ Saved profiles go to `~/.local/share/orbitstation/profiles`. "Reset all profiles
 command and wipes all four slots, so the app backs them all up first. The protocol is in [docs/protocol.md](docs/protocol.md). Thanks to
 [openflydigi](https://github.com/mkaliaha/openflydigi) for the profile blob research.
 
+## Adding a device
+
+The code is split so a new device is mostly data:
+
+- `src/station` knows nothing about Flydigi: the `Device` trait with optional capabilities
+  (`ProfileStore`, `HardwareSettings`, `LiveInput`), the registry of connected devices and HID discovery.
+- `src/flydigi` speaks Space Station's protocol and implements `Device` for every model of that family.
+- `src/models` describes each model: USB ids, the id it reports, its buttons and which profile parts it has.
+- `src/app` is the window; a device gets the pages its capabilities and features allow.
+
+A new model that speaks the same protocol is a new file in `src/models` and a line in `models::ALL`.
+A device with a protocol of its own implements `station::Device` and adds a `Family` to `station::FAMILIES`.
+
 ## Install
 
 Works on any distribution. Needs Rust 1.95 or newer ([rustup](https://rustup.rs)), a C compiler and git.

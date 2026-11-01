@@ -61,8 +61,15 @@ const LIGHT: Palette = Palette {
 
 /// GNOME 47 accent colours by their gsettings name.
 const ACCENTS: [(&str, u32); 9] = [
-    ("blue", 0x3584e4), ("teal", 0x2190a4), ("green", 0x3a944a), ("yellow", 0xc88800), ("orange", 0xed5b00),
-    ("red", 0xe62d42), ("pink", 0xd56199), ("purple", 0x9141ac), ("slate", 0x6f8396),
+    ("blue", 0x3584e4),
+    ("teal", 0x2190a4),
+    ("green", 0x3a944a),
+    ("yellow", 0xc88800),
+    ("orange", 0xed5b00),
+    ("red", 0xe62d42),
+    ("pink", 0xd56199),
+    ("purple", 0x9141ac),
+    ("slate", 0x6f8396),
 ];
 
 pub struct Colors {
@@ -177,7 +184,7 @@ fn gtk_css() -> HashMap<String, Color32> {
 }
 
 fn css_sources() -> [String; 2] {
-    let home = crate::config_home();
+    let home = super::storage::config_home();
     ["gtk-4.0/gtk.css", "gtk-3.0/gtk.css"].map(|f| {
         let mut text = String::new();
         read_css(&home.join(f), &mut text, 0);
@@ -244,7 +251,9 @@ impl Drop for Watcher {
 
 /// Inlines `@import url("x.css");` lines, theme generators put their colours in an imported file.
 fn read_css(path: &Path, out: &mut String, depth: u8) {
-    let Ok(text) = std::fs::read_to_string(path) else { return };
+    let Ok(text) = std::fs::read_to_string(path) else {
+        return;
+    };
     for line in text.lines() {
         let import = line.trim().strip_prefix("@import url(").and_then(|r| r.split(')').next());
         match import.map(|r| r.trim_matches(['"', '\''])) {
