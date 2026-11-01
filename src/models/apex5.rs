@@ -39,9 +39,8 @@ const BUTTONS: &[&str] = &[
     "", "", "", "Home", "", "", "", "",
 ];
 
-/// The Apex 5. Its macros live inside the mapping blob (protocol 3.1), which the editor does not
-/// read yet, so the macro editor stays off and the key table keeps macro bindings as they are. It
-/// has force triggers rather than trigger motors.
+/// The Apex 5. Its macros live inside the mapping blob (protocol 3.1), up to five, timed in 10 ms
+/// steps. It has force triggers rather than trigger motors.
 pub const MODEL: Model = Model {
     name: "Flydigi Apex 5",
     slug: "apex5",
@@ -53,7 +52,7 @@ pub const MODEL: Model = Model {
     live_input: true,
     features: Features {
         remap: true,
-        macros: false,
+        macros: true,
         sticks: true,
         triggers: true,
         gyro: true,

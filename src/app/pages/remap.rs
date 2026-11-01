@@ -85,7 +85,7 @@ fn macros_editor(ui: &mut egui::Ui, m: &mut Mapping) {
         m.macros.remove(i);
     }
     let free = m.model.keys.iter().rev().map(|k| k.0).find(|k| m.macros.iter().all(|mc| mc.key != *k));
-    if m.macros.len() < macros::MAX && ui.button(ui_kit::label(icon::PLUS, t!("Add macro"))).clicked() {
+    if m.macros.len() < m.max_macros() && ui.button(ui_kit::label(icon::PLUS, t!("Add macro"))).clicked() {
         m.macros.push(Macro { key: free.unwrap_or(FALLBACK_KEY), kind: 1, interval_ms: 0, steps: TAP.to_vec() });
     }
 }

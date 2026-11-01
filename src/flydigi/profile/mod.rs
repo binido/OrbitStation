@@ -2,6 +2,7 @@
 //! `.osp` file the app saves them to.
 
 pub mod gyro;
+pub mod macro_page;
 pub mod macros;
 pub mod map;
 pub mod rgb;

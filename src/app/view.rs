@@ -5,7 +5,7 @@ use std::path::PathBuf;
 use std::time::{Duration, Instant};
 
 use super::storage;
-use crate::flydigi::profile::{self, Profile, ProfileError, macros, rgb};
+use crate::flydigi::profile::{self, Profile, ProfileError, macro_page, macros, rgb};
 use crate::station::{Device, Error, Info, Model, Settings};
 
 /// How often a connected device is asked whether it is still there.
@@ -32,7 +32,7 @@ impl Mapping {
             model,
             slot,
             map: device.map.clone(),
-            macros: macros::parse(&device.macros),
+            macros: read_macros(model, &device),
             rgb: device.rgb.clone(),
             colors: vec![[0, 116, 255]],
             test_vibration: false,
@@ -49,7 +49,7 @@ impl Mapping {
             return Err(ProfileError::OtherDevice);
         }
         self.map.clone_from(&p.map);
-        self.macros = macros::parse(&p.macros);
+        self.macros = read_macros(self.model, p);
         self.rgb.clone_from(&p.rgb);
         Ok(())
     }
@@ -65,8 +65,32 @@ impl Mapping {
             return Ok(Profile { map: self.map.clone(), macros: self.device.macros.clone(), rgb: self.rgb.clone() });
         }
         let mut map = self.map.clone();
-        profile::bind_macros(&mut map, self.model.keys, &self.macros)?;
-        Ok(Profile { map, macros: macros::encode(&self.device.macros, &self.macros)?, rgb: self.rgb.clone() })
+        if self.model.macro_store {
+            profile::bind_macros(&mut map, self.model.keys, &self.macros)?;
+            let store = macros::encode(&self.device.macros, &self.macros)?;
+            return Ok(Profile { map, macros: store, rgb: self.rgb.clone() });
+        }
+        // An untouched page keeps its bytes: re-encoding would clear unset intervals and orphaned
+        // bindings the user did not ask about.
+        if self.macros != macro_page::parse(&map) {
+            profile::bind_macros(&mut map, self.model.keys, &self.macros)?;
+            macro_page::encode(&mut map, &self.macros)?;
+        }
+        Ok(Profile { map, macros: self.device.macros.clone(), rgb: self.rgb.clone() })
+    }
+
+    /// Most macros the model's profile holds.
+    pub fn max_macros(&self) -> usize {
+        if self.model.macro_store { macros::MAX } else { macro_page::MAX }
+    }
+}
+
+/// Macros as the device holds them, wherever the model keeps them.
+fn read_macros(model: &Model, p: &Profile) -> Vec<macros::Macro> {
+    match (model.features.macros, model.macro_store) {
+        (false, _) => vec![],
+        (true, true) => macros::parse(&p.macros),
+        (true, false) => macro_page::parse(&p.map),
     }
 }
 
@@ -216,5 +240,38 @@ impl DeviceView {
         if let Err(e) = r {
             self.note = e.to_string();
         }
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::flydigi::profile::map;
+    use crate::models::APEX_5;
+
+    fn apex_profile() -> Profile {
+        let mut m = vec![0xff; map::SIZE];
+        // no macros, every repeat interval at the factory 30 ms, and a stale macro binding on M1
+        m[820..825].fill(3);
+        map::set_key(&mut m, 18, map::Key { target: map::MACRO, turbo: 0, hz: 0 });
+        Profile { map: m, macros: vec![], rgb: vec![0; 380] }
+    }
+
+    #[test]
+    fn an_untouched_apex_profile_builds_back_unchanged() {
+        let m = Mapping::new(&APEX_5, 0, apex_profile());
+        assert_eq!(m.build(), Ok(apex_profile()));
+    }
+
+    #[test]
+    fn an_apex_macro_goes_into_the_mapping_blob_and_binds_its_key() {
+        let mut m = Mapping::new(&APEX_5, 0, apex_profile());
+        let tap = vec![macros::Step { delay_ms: 0, key: 4, event: 1 }, macros::Step { delay_ms: 50, key: 4, event: 0 }];
+        m.macros.push(macros::Macro { key: 19, kind: 1, interval_ms: 0, steps: tap });
+        let p = m.build().expect("one macro fits");
+        assert_eq!(macro_page::parse(&p.map), m.macros);
+        assert_eq!(map::key(&p.map, 19).target, map::MACRO);
+        assert_eq!(map::key(&p.map, 18).target, map::IDENTITY);
+        assert!(p.macros.is_empty());
     }
 }
