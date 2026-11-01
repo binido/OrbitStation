@@ -18,7 +18,23 @@ pub use settings::app_settings;
 
 use super::view::DeviceView;
 use super::widgets::icon;
-use crate::station::Device;
+use crate::station::{Device, Kind};
+
+/// What to call a kind of device in a heading.
+pub fn kind_name(kind: Kind) -> &'static str {
+    match kind {
+        Kind::Gamepad => t!("Gamepad"),
+        Kind::Dock => t!("Dock"),
+    }
+}
+
+/// The sidebar icon of a kind of device.
+pub fn kind_icon(kind: Kind) -> &'static str {
+    match kind {
+        Kind::Gamepad => icon::GAMEPAD,
+        Kind::Dock => icon::DOCK,
+    }
+}
 
 /// A page in the sidebar.
 #[derive(PartialEq, Eq, Clone, Copy, Debug)]

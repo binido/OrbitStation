@@ -5,6 +5,20 @@ An open-source Linux application for configuring and managing Flydigi controller
 
 Native Rust + egui, no Electron. Supported: **Flydigi Vader 5 Pro** over USB cable.
 
+## Supported devices
+
+Several devices can be connected at once; each gets the pages it supports.
+
+| Device | Status | What works |
+|---|---|---|
+| Flydigi Vader 5 Pro | Tested on hardware | Everything below |
+| Flydigi Apex 5 | Not tested here, from openflydigi's measurements | Info, name, profiles, buttons, sticks, triggers, gyro, grip vibration, lighting, settings, live test. Macros (kept inside its profile) are left as they are, force triggers and the screen are not driven, no factory profile |
+| Flydigi Apex 6 / 6 Pro | Not tested | Info only: it speaks a newer dialect for the rest |
+| Flydigi CD2 charging dock | Not tested here, from openflydigi's measurements | Info, name, the four switches, whether a controller is seated and its charge. Dock lighting is not driven yet |
+
+Older Flydigi controllers (Vader 3 and 4, Apex 3 and 4, Direwolf) show up on Linux as a plain
+Xbox controller without Flydigi's vendor interface, so they cannot be configured from here.
+
 ## Features
 
 - Device info: model, firmware, battery
@@ -32,7 +46,8 @@ Before every write the previous
 profile is copied to `~/.local/share/orbitstation/backups` (`.osp` files, loadable from the profile tabs).
 Saved profiles go to `~/.local/share/orbitstation/profiles`. "Reset all profiles" is the pad's own
 command and wipes all four slots, so the app backs them all up first. The protocol is in [docs/protocol.md](docs/protocol.md). Thanks to
-[openflydigi](https://github.com/mkaliaha/openflydigi) for the profile blob research.
+[openflydigi](https://github.com/mkaliaha/openflydigi) for the profile blob research and the Apex 5, Apex 6
+and CD2 dock facts.
 
 ## Adding a device
 
@@ -41,10 +56,11 @@ The code is split so a new device is mostly data:
 - `src/station` knows nothing about Flydigi: the `Device` trait with optional capabilities
   (`ProfileStore`, `HardwareSettings`, `LiveInput`), the registry of connected devices and HID discovery.
 - `src/flydigi` speaks Space Station's protocol and implements `Device` for every model of that family.
-- `src/models` describes each model: USB ids, the id it reports, its buttons and which profile parts it has.
+- `src/models` describes each model: the id it reports, its buttons and which profile parts it has.
 - `src/app` is the window; a device gets the pages its capabilities and features allow.
 
-A new model that speaks the same protocol is a new file in `src/models` and a line in `models::ALL`.
+A new model that speaks the same protocol is a new file in `src/models` and a line in `models::PADS`
+or `models::DOCKS`.
 A device with a protocol of its own implements `station::Device` and adds a `Family` to `station::FAMILIES`.
 
 ## Install

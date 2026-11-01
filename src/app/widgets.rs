@@ -39,6 +39,7 @@ pub mod icon {
     pub const MINUS: &str = "\u{e32a}";
     pub const SQUARE: &str = "\u{e45e}";
     pub const RESTORE: &str = "\u{e1ca}";
+    pub const DOCK: &str = "\u{e8d0}";
 }
 
 /// Space Grotesk has no Cyrillic: Manrope (Regular, Cyrillic only) draws it; Phosphor goes before
@@ -171,6 +172,13 @@ pub fn card<R>(ui: &mut egui::Ui, icon: &str, title: &str, body: impl FnOnce(&mu
         .inner;
     ui.add_space(14.0);
     r
+}
+
+/// [`card`] when `shown`, nothing otherwise; for parts only some models have.
+pub fn card_if(shown: bool, ui: &mut egui::Ui, icon: &str, title: &str, body: impl FnOnce(&mut egui::Ui)) {
+    if shown {
+        card(ui, icon, title, body);
+    }
 }
 
 /// Label in the left column of a card's grid, dimmed like GTK's row subtitles.

@@ -10,7 +10,7 @@ use std::collections::HashMap;
 use std::path::{Path, PathBuf};
 use std::time::{Duration, Instant};
 
-pub use device::{Choice, Device, HardwareSettings, Info, Input, LiveInput, ProfileStore, Settings, Toggle};
+pub use device::{Battery, Choice, Device, HardwareSettings, Info, Input, LiveInput, ProfileStore, Settings, Toggle};
 pub use error::Error;
 pub use model::{Factory, Features, Kind, Model};
 
@@ -23,7 +23,7 @@ pub struct Family {
 }
 
 /// Every family the station talks to. A device with a protocol of its own adds a family here.
-const FAMILIES: &[Family] = &[flydigi::FAMILY];
+const FAMILIES: &[Family] = &[flydigi::PAD_FAMILY, flydigi::dock::FAMILY];
 
 /// How long a node that failed to open is left alone; probing a silent one stalls the window briefly.
 const RETRY: Duration = Duration::from_secs(10);

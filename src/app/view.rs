@@ -54,11 +54,16 @@ impl Mapping {
         Ok(())
     }
 
-    /// The profile to write.
+    /// The profile to write. Keys bound to a macro follow the macro editor on models that have one.
     ///
     /// # Errors
     /// [`ProfileError`] when the macros do not fit or two share a key.
     pub fn build(&self) -> Result<Profile, ProfileError> {
+        if !self.model.features.macros {
+            // macros the editor does not show (protocol 3.1 keeps them in the mapping blob) stay as
+            // the device has them, bindings included
+            return Ok(Profile { map: self.map.clone(), macros: self.device.macros.clone(), rgb: self.rgb.clone() });
+        }
         let mut map = self.map.clone();
         profile::bind_macros(&mut map, self.model.keys, &self.macros)?;
         Ok(Profile { map, macros: macros::encode(&self.device.macros, &self.macros)?, rgb: self.rgb.clone() })

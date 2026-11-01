@@ -46,9 +46,12 @@ pub fn request(cmd: u8, payload: &[u8]) -> [u8; PKT] {
     p
 }
 
+/// Shortest reply: a numbered input report holds 31 bytes after its id, an unnumbered one 32.
+pub const MIN_REPLY: usize = 31;
+
 /// Whether `p` is a full reply to `cmd`.
 pub fn is_reply(p: &[u8], cmd: u8) -> bool {
-    p.len() >= PKT && p[0] == 0x5a && p[1] == 0xa5 && p[2] == cmd
+    p.len() >= MIN_REPLY && p[..3] == [0x5a, 0xa5, cmd]
 }
 
 #[cfg(test)]

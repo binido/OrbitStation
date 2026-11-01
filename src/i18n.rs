@@ -141,8 +141,8 @@ mod tests {
         ];
         let mut all: Vec<&str> = tables.iter().flat_map(|t| t.iter().map(|e| e.1)).collect();
         all.extend(stick::SIDES);
-        all.push(models::UNKNOWN.name);
-        all.extend(Toggle::ALL.iter().map(|t| t.label()));
+        all.extend([models::UNKNOWN.name, models::UNKNOWN_DOCK.name]);
+        all.extend(Toggle::PAD.iter().chain(&Toggle::DOCK).map(|t| t.label()));
         all
     }
 

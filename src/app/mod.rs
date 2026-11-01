@@ -137,13 +137,13 @@ impl App {
             widgets::nav_section(ui, t!("Devices"));
         }
         for (path, kind, name) in devices {
-            let kind_icon = if kind == Kind::Gamepad { icon::GAMEPAD } else { icon::PLUGS };
-            if widgets::nav_item(ui, self.selected.as_ref() == Some(&path), kind_icon, &name) {
+            if widgets::nav_item(ui, self.selected.as_ref() == Some(&path), pages::kind_icon(kind), &name) {
                 self.selected = Some(path);
             }
         }
         if let Some(dev) = self.selected.as_ref().and_then(|p| self.station.get(p)) {
-            for (title, tabs) in [(t!("Gamepad"), &Tab::DEVICE[..]), (t!("Profile"), &Tab::PROFILE[..])] {
+            let kind = pages::kind_name(dev.model().kind);
+            for (title, tabs) in [(kind, &Tab::DEVICE[..]), (t!("Profile"), &Tab::PROFILE[..])] {
                 let shown: Vec<Tab> = tabs.iter().copied().filter(|t| t.fits(dev)).collect();
                 if shown.is_empty() {
                     continue;

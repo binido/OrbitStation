@@ -17,6 +17,12 @@ pub enum Error {
     /// A request went unanswered after its retries.
     #[error("{}", t!("The gamepad did not answer command 0x{}", format!("{:02x}", .0)))]
     NoReply(u8),
+    /// The device has no such setting or command.
+    #[error("{}", t!("The device does not have this setting"))]
+    Unsupported,
+    /// A name was empty where the device needs one.
+    #[error("{}", t!("a name cannot be empty"))]
+    EmptyName,
     /// The device was unplugged while being talked to.
     #[error("{}", t!("Gamepad disconnected"))]
     Disconnected,

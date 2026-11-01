@@ -1,6 +1,8 @@
 //! Flydigi's Space Station protocol ("NewXInput"), spoken on a vendor HID interface. One
-//! [`FlydigiDevice`] serves every model of the family, the [`Model`] it reports picks what it can do.
+//! [`FlydigiDevice`] serves every controller of the family, the [`Model`] it reports picks what it
+//! can do; [`dock`] is the charging dock, which shares the envelope and little else.
 
+pub mod dock;
 pub mod frame;
 mod parse;
 pub mod profile;
@@ -13,13 +15,20 @@ use frame::{PKT, cmd, request};
 use profile::{Profile, map};
 
 use crate::models;
-use crate::station::hid::{Link, Node};
+use crate::station::hid::{Link, Node, Reports};
 use crate::station::{
     Choice, Device, Error, Family, HardwareSettings, Info, Input, LiveInput, Model, ProfileStore, Settings, Toggle,
 };
 
-/// The family entry for the station.
-pub const FAMILY: Family = Family { claims, open };
+/// The controller family for the station.
+pub const PAD_FAMILY: Family = Family { claims, open };
+
+/// Flydigi's USB vendor id. Only the `5a a5` generation carries it, older pads are plain XInput.
+pub const VENDOR: u16 = 0x37d7;
+/// The product id's top nibble tells kinds of device apart, as Space Station's HID managers do:
+/// 2 for controllers, 6 for charging docks.
+const PAD_NIBBLE: u16 = 2;
+const DOCK_NIBBLE: u16 = 6;
 
 /// Every request but the flash commit is answered within this time.
 const REPLY_WAIT: Duration = Duration::from_millis(500);
@@ -30,12 +39,15 @@ const PROBE_WAIT: Duration = Duration::from_millis(300);
 /// A bad packet is answered with silence, so a missing reply is retried.
 const TRIES: usize = 3;
 
+/// A controller's command interface: Flydigi's ids and the vendor collection, which keeps its
+/// keyboard and mouse interface out. The model is told by the id the controller reports.
 fn claims(node: &Node) -> bool {
-    models::ALL.iter().any(|m| m.usb.contains(&(node.vendor, node.product)) && m.config_interface == node.interface)
+    node.vendor == VENDOR && node.product >> 12 == PAD_NIBBLE && node.reports.is_some()
 }
 
 fn open(node: &Node) -> Result<Box<dyn Device>, Error> {
-    FlydigiDevice::open(&node.path).map(|d| Box::new(d) as Box<dyn Device>)
+    let reports = node.reports.ok_or_else(|| Error::Silent(node.path.clone()))?;
+    FlydigiDevice::open(&node.path, reports).map(|d| Box::new(d) as Box<dyn Device>)
 }
 
 /// A connected device of the Space Station family.
@@ -52,10 +64,10 @@ impl FlydigiDevice {
     /// # Errors
     /// [`Error::Access`] when the node cannot be opened, [`Error::Silent`] when nothing answers:
     /// a receiver without its pad, or a second pad that hung.
-    pub fn open(path: &Path) -> Result<FlydigiDevice, Error> {
+    pub fn open(path: &Path, reports: Reports) -> Result<FlydigiDevice, Error> {
         let input = Arc::new(Mutex::new(None));
         let sink = input.clone();
-        let link = Link::open(path, move |p| match parse::input(p) {
+        let link = Link::open(path, reports, move |p| match parse::input(p) {
             Some(i) => {
                 *sink.lock().unwrap_or_else(PoisonError::into_inner) = Some(i);
                 true
@@ -65,7 +77,7 @@ impl FlydigiDevice {
         let mut device = FlydigiDevice { path: path.to_path_buf(), model: &models::UNKNOWN, link, input };
         let hello = request(cmd::HEARTBEAT, &[]);
         let reply = device.exchange(&hello, PROBE_WAIT, 1).map_err(|_| Error::Silent(path.to_path_buf()))?;
-        device.model = models::by_device_id(parse::info(&reply).device_id);
+        device.model = models::pad(parse::info(&reply).device_id);
         Ok(device)
     }
 
@@ -154,7 +166,7 @@ impl Device for FlydigiDevice {
     }
 
     fn settings(&mut self) -> Option<&mut dyn HardwareSettings> {
-        Some(self)
+        self.model.settings.then_some(self as &mut dyn HardwareSettings)
     }
 
     fn profiles(&mut self) -> Option<&mut dyn ProfileStore> {
@@ -162,7 +174,7 @@ impl Device for FlydigiDevice {
     }
 
     fn live(&mut self) -> Option<&mut dyn LiveInput> {
-        Some(self)
+        self.model.live_input.then_some(self as &mut dyn LiveInput)
     }
 }
 
@@ -172,7 +184,8 @@ impl HardwareSettings for FlydigiDevice {
     }
 
     fn set_toggle(&mut self, toggle: Toggle, on: bool) -> Result<(), Error> {
-        self.call(&parse::toggle(toggle, on)).map(drop)
+        let req = parse::toggle(toggle, on).ok_or(Error::Unsupported)?;
+        self.call(&req).map(drop)
     }
 
     fn set_choice(&mut self, choice: Choice, value: u8) -> Result<(), Error> {
@@ -195,7 +208,8 @@ impl ProfileStore for FlydigiDevice {
         if map.len() != map::SIZE {
             return Err(Error::NoReply(cmd::MAP_READ));
         }
-        let macros = self.read_blob(cmd::MACRO_READ, slot)?;
+        // protocol 3.1 keeps the macros inside the mapping blob and has no store to read
+        let macros = if self.model.macro_store { self.read_blob(cmd::MACRO_READ, slot)? } else { vec![] };
         let rgb = self.read_blob(cmd::RGB_READ, slot)?;
         Ok(Profile { map, macros, rgb })
     }
@@ -204,7 +218,9 @@ impl ProfileStore for FlydigiDevice {
     /// to flash and applied, since macros only start playing after an apply.
     fn write(&mut self, slot: u8, old: &Profile, new: &Profile) -> Result<(), Error> {
         self.write_blob(cmd::MAP_WRITE_START, cmd::MAP_WRITE_PACK, slot, &old.map, &new.map)?;
-        self.write_blob(cmd::MACRO_WRITE_START, cmd::MACRO_WRITE_PACK, slot, &old.macros, &new.macros)?;
+        if self.model.macro_store {
+            self.write_blob(cmd::MACRO_WRITE_START, cmd::MACRO_WRITE_PACK, slot, &old.macros, &new.macros)?;
+        }
         self.write_blob(cmd::RGB_WRITE_START, cmd::RGB_WRITE_PACK, slot, &old.rgb, &new.rgb)?;
         let version = map::version(&new.map).to_le_bytes();
         self.exchange(&request(cmd::MAP_SAVE, &version), FLASH_WAIT, TRIES)?;
@@ -253,7 +269,8 @@ mod tests {
     #[ignore]
     fn profile_round_trips_on_hardware() {
         let node = crate::station::hid::nodes().into_iter().find(claims).expect("a Flydigi device is connected");
-        let mut d = FlydigiDevice::open(&node.path).expect("the device answers");
+        let reports = node.reports.expect("a claimed node has vendor reports");
+        let mut d = FlydigiDevice::open(&node.path, reports).expect("the device answers");
         let active = ProfileStore::active(&mut d).expect("the active slot");
         let orig = ProfileStore::read(&mut d, 3).expect("slot 4 reads");
         let mut new = orig.clone();

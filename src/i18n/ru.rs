@@ -221,6 +221,16 @@ pub fn ru(s: &str) -> Option<&'static str> {
         "Add macro" => "Добавить макрос",
         "Devices" => "Устройства",
         "No Flydigi device found (connect it with a cable)" => "Устройство Flydigi не найдено (подключи его кабелем)",
+        "Lights off while a controller charges" => "Гасить подсветку, пока геймпад заряжается",
+        "Lighting in step with the controller" => "Подсветка синхронно с геймпадом",
+        "Turn off with the computer" => "Выключаться вместе с компьютером",
+        "Charging animation" => "Анимация зарядки",
+        "Dock" => "Станция",
+        "Docked controller" => "Геймпад на станции",
+        "none" => "нет",
+        "The device does not have this setting" => "У устройства нет такой настройки",
+        "a name cannot be empty" => "имя не может быть пустым",
+        "Unknown Flydigi dock" => "Неизвестная станция Flydigi",
         _ => return None,
     })
 }

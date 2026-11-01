@@ -5,19 +5,20 @@ use eframe::egui::{self, RichText};
 use super::super::storage;
 use super::super::view::DeviceView;
 use super::super::widgets::{self as ui_kit, icon};
-use crate::station::{Device, Error};
+use crate::station::{Battery, Device, Error, Kind};
 
 pub fn show(ui: &mut egui::Ui, dev: &mut dyn Device, view: &mut DeviceView) {
     let Some(info) = view.info.clone() else {
         ui.label(t!("No data from the gamepad."));
         return;
     };
-    ui_kit::card(ui, icon::INFO, t!("Gamepad"), |ui| {
+    let dock = dev.model().kind == Kind::Dock;
+    ui_kit::card(ui, icon::INFO, super::kind_name(dev.model().kind), |ui| {
         ui_kit::grid(ui, "info", |ui| {
             ui_kit::key(ui, t!("Model"));
             ui.strong(crate::i18n::tr(dev.model().name));
             ui.end_row();
-            ui_kit::key(ui, t!("Gamepad name"));
+            ui_kit::key(ui, if dock { t!("Name") } else { t!("Gamepad name") });
             ui.horizontal(|ui| {
                 ui.add(egui::TextEdit::singleline(&mut view.nickname).hint_text(t!("no name")).desired_width(200.0));
                 if ui.button(ui_kit::label(icon::FLOPPY, t!("Save name"))).clicked() {
@@ -26,15 +27,24 @@ pub fn show(ui: &mut egui::Ui, dev: &mut dyn Device, view: &mut DeviceView) {
                 }
             });
             ui.end_row();
-            ui_kit::key(ui, t!("Battery"));
-            ui.label(if info.charging { t!("Charging").to_string() } else { format!("{} / 5", info.battery) });
-            ui.end_row();
+            if let Some(b) = info.battery {
+                ui_kit::key(ui, t!("Battery"));
+                ui.label(battery(b));
+                ui.end_row();
+            }
+            if let Some(seated) = info.docked {
+                ui_kit::key(ui, t!("Docked controller"));
+                ui.label(seated.map_or_else(|| t!("none").to_string(), battery));
+                ui.end_row();
+            }
             ui_kit::key(ui, t!("Firmware"));
             ui.label(&info.firmware);
             ui.end_row();
-            ui_kit::key(ui, t!("Radio module"));
-            ui.label(&info.radio);
-            ui.end_row();
+            if let Some(radio) = &info.radio {
+                ui_kit::key(ui, t!("Radio module"));
+                ui.label(radio);
+                ui.end_row();
+            }
             ui_kit::key(ui, t!("Device ID"));
             ui.label(info.device_id.to_string());
             ui.end_row();
@@ -82,6 +92,10 @@ pub fn show(ui: &mut egui::Ui, dev: &mut dyn Device, view: &mut DeviceView) {
             view.refresh(dev);
         }
     });
+}
+
+fn battery(b: Battery) -> String {
+    if b.charging { t!("Charging").to_string() } else { format!("{} / 5", b.level) }
 }
 
 /// Backs up every slot, then resets them all. Reading a slot switches to it, so the active one comes

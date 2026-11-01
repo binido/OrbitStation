@@ -6,17 +6,26 @@ use std::path::Path;
 use super::{Error, Model};
 use crate::flydigi::profile::Profile;
 
+/// Charge of a battery.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub struct Battery {
+    /// Level out of 5.
+    pub level: u8,
+    pub charging: bool,
+}
+
 /// State the device reports about itself.
 #[derive(Clone, Default, Debug, PartialEq, Eq)]
 pub struct Info {
     /// Model id from the device, see [`Model::device_ids`].
     pub device_id: u8,
-    /// Battery level out of 5.
-    pub battery: u8,
-    pub charging: bool,
     pub firmware: String,
-    /// Firmware of the radio module.
-    pub radio: String,
+    /// Firmware of the radio module, for devices that have one.
+    pub radio: Option<String>,
+    /// The device's own battery, `None` for one without.
+    pub battery: Option<Battery>,
+    /// For a dock: `Some(None)` when it is empty, `Some(Some(_))` with the seated controller's charge.
+    pub docked: Option<Option<Battery>>,
 }
 
 /// One live input report: sticks, triggers, buttons and motion sensors.
@@ -37,6 +46,7 @@ pub struct Input {
 /// On/off settings kept in the device, outside the profiles.
 #[derive(Clone, Copy, PartialEq, Eq, Debug)]
 pub enum Toggle {
+    // a controller's
     QuickSwitchConfig,
     XboxHomeButton,
     MotionDebounce,
@@ -46,11 +56,18 @@ pub enum Toggle {
     JoystickRebound,
     ScreenStatusBar,
     Audio,
+    // a dock's
+    /// Space Station calls it "Intelligent start"; in practice it turns the lights of the dock and of
+    /// the seated controller off while it charges.
+    DockLightsOffWhileCharging,
+    DockLightingSync,
+    DockOffWithComputer,
+    DockChargeAnimation,
 }
 
 impl Toggle {
-    /// Every toggle, in the order the settings page lists them.
-    pub const ALL: [Toggle; 9] = [
+    /// A controller's toggles, in the order the settings page lists them.
+    pub const PAD: [Toggle; 9] = [
         Toggle::JoystickAutoCalibration,
         Toggle::JoystickDebounce,
         Toggle::JoystickRebound,
@@ -60,6 +77,14 @@ impl Toggle {
         Toggle::XboxHomeButton,
         Toggle::ScreenStatusBar,
         Toggle::Audio,
+    ];
+
+    /// A dock's toggles.
+    pub const DOCK: [Toggle; 4] = [
+        Toggle::DockLightsOffWhileCharging,
+        Toggle::DockLightingSync,
+        Toggle::DockOffWithComputer,
+        Toggle::DockChargeAnimation,
     ];
 
     /// Translated name for the settings page.
@@ -74,6 +99,10 @@ impl Toggle {
             Toggle::JoystickRebound => t!("Stick rebound algorithm"),
             Toggle::ScreenStatusBar => t!("Always show the on-screen status bar"),
             Toggle::Audio => t!("Audio through the gamepad"),
+            Toggle::DockLightsOffWhileCharging => t!("Lights off while a controller charges"),
+            Toggle::DockLightingSync => t!("Lighting in step with the controller"),
+            Toggle::DockOffWithComputer => t!("Turn off with the computer"),
+            Toggle::DockChargeAnimation => t!("Charging animation"),
         }
     }
 }

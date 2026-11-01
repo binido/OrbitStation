@@ -22,7 +22,8 @@ pub fn editor(ui: &mut egui::Ui, m: &mut Mapping) {
         let strength = egui::Slider::new(&mut v.grip_strength, 1..=100).text(t!("strength, % (50 = like Xbox)"));
         ui.add_enabled(v.grip_on, strength);
     });
-    ui_kit::card(ui, icon::WAVEFORM, t!("Triggers"), |ui| {
+    let trigger_motors = m.model.features.trigger_motors;
+    ui_kit::card_if(trigger_motors, ui, icon::WAVEFORM, t!("Triggers"), |ui| {
         ui.checkbox(&mut v.trig_on, t!("Trigger vibration"));
         ui.add_enabled_ui(v.trig_on, |ui| {
             ui.add(egui::Slider::new(&mut v.trig_strength, 1..=100).text(t!("strength, %")));

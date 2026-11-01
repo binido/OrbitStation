@@ -2,11 +2,12 @@
 //! carry station values.
 
 use super::frame::{PKT, cmd, request};
-use crate::station::{Choice, Info, Input, Settings, Toggle};
+use crate::station::{Battery, Choice, Info, Input, Settings, Toggle};
 
-/// Sub-command of 0x13 for a toggle; its bit in the 0x03 reply is this minus one, Audio sits on bit 8.
-fn toggle_id(t: Toggle) -> u8 {
-    match t {
+/// Sub-command of 0x13 for a controller's toggle; its bit in the 0x03 reply is this minus one, Audio
+/// sits on bit 8. `None` for a dock's toggle.
+fn toggle_id(t: Toggle) -> Option<u8> {
+    Some(match t {
         Toggle::QuickSwitchConfig => 1,
         Toggle::XboxHomeButton => 2,
         Toggle::MotionDebounce => 3,
@@ -16,16 +17,21 @@ fn toggle_id(t: Toggle) -> u8 {
         Toggle::JoystickRebound => 7,
         Toggle::ScreenStatusBar => 8,
         Toggle::Audio => 10,
-    }
+        _ => return None,
+    })
 }
 
 fn toggle_bit(t: Toggle) -> u16 {
-    if t == Toggle::Audio { 1 << 8 } else { 1 << (toggle_id(t) - 1) }
+    match toggle_id(t) {
+        Some(10) => 1 << 8,
+        Some(id) => 1 << (id - 1),
+        None => 0,
+    }
 }
 
-/// Request that switches a toggle.
-pub fn toggle(t: Toggle, on: bool) -> [u8; PKT] {
-    request(cmd::TOGGLE, &[toggle_id(t), on as u8])
+/// Request that switches a controller's toggle, `None` for a toggle controllers do not have.
+pub fn toggle(t: Toggle, on: bool) -> Option<[u8; PKT]> {
+    Some(request(cmd::TOGGLE, &[toggle_id(t)?, u8::from(on)]))
 }
 
 /// Request that sets a choice.
@@ -54,10 +60,10 @@ pub fn info(p: &[u8]) -> Info {
     let bat = d[6];
     Info {
         device_id: d[0],
-        charging: bat >> 4 == 1,
-        battery: bat & 15,
+        battery: Some(Battery { level: bat & 15, charging: bat >> 4 == 1 }),
         firmware: version(d[10], d[11]),
-        radio: version(d[22], d[23]),
+        radio: Some(version(d[22], d[23])),
+        docked: None,
     }
 }
 
@@ -65,7 +71,7 @@ pub fn info(p: &[u8]) -> Info {
 pub fn settings(p: &[u8]) -> Settings {
     let usable = p[5] as u16 | ((p[7] as u16 & 1) << 8);
     let enabled = p[6] as u16 | ((p[8] as u16 & 1) << 8);
-    let toggles = Toggle::ALL
+    let toggles = Toggle::PAD
         .into_iter()
         .filter(|t| usable & toggle_bit(*t) != 0)
         .map(|t| (t, enabled & toggle_bit(t) != 0))
@@ -148,8 +154,17 @@ mod tests {
     fn heartbeat_of_a_vader_5_pro() {
         let hb = hex("5a a5 01 01 00 82 01 00 00 00 00 13 45 01 00 71 50 00 00 35 18 00 00 00 00 00 00 10 26 1f 00 41");
         let info = info(&hb);
-        assert_eq!((info.device_id, info.battery, info.charging), (0x82, 3, true));
-        assert_eq!((info.firmware.as_str(), info.radio.as_str()), ("7.1.5.0", "1.0.2.6"));
+        assert_eq!((info.device_id, info.battery), (0x82, Some(Battery { level: 3, charging: true })));
+        assert_eq!((info.firmware.as_str(), info.radio.as_deref()), ("7.1.5.0", Some("1.0.2.6")));
+    }
+
+    #[test]
+    fn heartbeat_of_an_apex_5_without_its_report_id() {
+        // openflydigi's capture over the dongle, report id 04 stripped: 31 bytes
+        let hb = hex("5a a5 01 01 00 80 02 00 00 00 00 05 45 01 00 70 45 21 31 45 25 00 00 01 28 00 00 11 31 1f 00");
+        let info = info(&hb);
+        assert_eq!((info.device_id, info.battery), (128, Some(Battery { level: 5, charging: false })));
+        assert_eq!(info.firmware, "7.0.4.5");
     }
 
     #[test]
@@ -166,7 +181,9 @@ mod tests {
 
     #[test]
     fn toggle_request_names_its_sub_command() {
-        assert_eq!(toggle(Toggle::JoystickDebounce, true)[..7], [0x5a, 0xa5, 0x13, 0x04, 0x05, 0x01, 0x1d]);
+        let req = toggle(Toggle::JoystickDebounce, true).expect("a controller toggle");
+        assert_eq!(req[..7], [0x5a, 0xa5, 0x13, 0x04, 0x05, 0x01, 0x1d]);
+        assert_eq!(toggle(Toggle::DockLightingSync, true), None);
     }
 
     #[test]
