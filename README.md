@@ -28,6 +28,14 @@
 
 <br>
 
+<p align="center">
+  <img src="docs/images/button-test.png" alt="OrbitStation testing a Flydigi Vader 5 Pro live: both sticks, the triggers, every button and the motion sensors" width="100%">
+  <br>
+  <sub>A Vader 5 Pro on the Button test page, in the default GTK theme.</sub>
+</p>
+
+<br>
+
 <table>
   <tr>
     <td width="25%" valign="top">
@@ -99,12 +107,16 @@ DualSense audio haptics to the grip motors, the Apex 6 dialect. Details, and wha
 <table>
   <tr>
     <td width="50%" valign="top">
+      <img src="docs/images/device.png" alt="The Device page: firmware, battery and the four onboard profiles" width="100%">
+      <br>
       <h3>Profiles</h3>
       Four onboard profiles, switched from the app. Name them, save them to <code>.osp</code> files and load them back.
       Before every write the previous profile is copied to <code>~/.local/share/orbitstation/backups</code>;
       "Reset all profiles" backs up all four slots first.
     </td>
     <td width="50%" valign="top">
+      <img src="docs/images/remapping.png" alt="The Remapping page: what each button presses and its turbo" width="100%">
+      <br>
       <h3>Buttons and macros</h3>
       Remap any button per profile, including the back paddles M1-M4, LM/RM and C/Z.
       Turbo while held or toggled, 1-30 presses per second. Macros played once, while held or toggled.
@@ -112,12 +124,16 @@ DualSense audio haptics to the grip motors, the Apex 6 dialect. Details, and wha
   </tr>
   <tr>
     <td width="50%" valign="top">
+      <img src="docs/images/sticks.png" alt="The Sticks page: curves and dead zones for both sticks" width="100%">
+      <br>
       <h3>Sticks and triggers</h3>
       Stick curves from presets or custom points, inner and outer dead zones, circular range.
       Trigger travel: where LT/RT start registering and where they read fully pressed.
       On the Apex 5, force-trigger effects with a "Try on the controller" button.
     </td>
     <td width="50%" valign="top">
+      <img src="docs/images/vibration.png" alt="The Vibration page: grip and trigger strength, threshold and amplitude" width="100%">
+      <br>
       <h3>Gyro and vibration</h3>
       Gyro aiming done by the pad itself: tilt drives a stick while an enable key is held or toggled.
       Grip and trigger vibration: on/off, strength, trigger threshold and amplitude window.
@@ -125,11 +141,15 @@ DualSense audio haptics to the grip motors, the Apex 6 dialect. Details, and wha
   </tr>
   <tr>
     <td width="50%" valign="top">
+      <img src="docs/images/lighting.png" alt="The Lighting page with the Rainbow effect and its animation preview" width="100%">
+      <br>
       <h3>Lighting</h3>
       Solid, multi-colour, breath, flow, rainbow, wave and flash, with brightness and speed, per profile.
       The CD2 dock gets eight effects or your own picture or GIF, with a live preview.
     </td>
     <td width="50%" valign="top">
+      <img src="docs/images/settings.png" alt="The Settings page: language, interface scale and the pad's own switches" width="100%">
+      <br>
       <h3>Live test and settings</h3>
       Buttons, sticks, triggers, gyro and accelerometer live, plus a vibration test.
       Stick auto-calibration, debounce, rebound, precision, center sensitivity, Home as Xbox Guide,
@@ -145,6 +165,21 @@ Scale from 75 to 200% of the system scale (Ctrl + / Ctrl - / Ctrl 0). Colours co
 palette, the GNOME accent and `@define-color` overrides in `~/.config/gtk-4.0/gtk.css`, so themes from
 Noctalia, matugen and the like are picked up live; light or dark follows the system. Space Grotesk with
 Manrope for Cyrillic, both shipped inside the binary (OFL, licences in `assets/fonts`).
+
+<table>
+  <tr>
+    <td width="50%" valign="top">
+      <img src="docs/images/lighting.png" alt="The Lighting page in the default libadwaita dark palette with a blue accent" width="100%">
+      <br>
+      <sub>Default GTK theme: libadwaita's dark palette and blue accent.</sub>
+    </td>
+    <td width="50%" valign="top">
+      <img src="docs/images/lighting-theme.png" alt="The same page with a Noctalia gtk.css: warm dark background and a pink accent" width="100%">
+      <br>
+      <sub>The same page with a Noctalia <code>gtk.css</code>: its colours, no restart.</sub>
+    </td>
+  </tr>
+</table>
 
 ## Under the hood
 
