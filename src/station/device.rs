@@ -11,9 +11,20 @@ use crate::flydigi::profile::Profile;
 /// Charge of a battery.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub struct Battery {
-    /// Level out of 5.
-    pub level: u8,
+    /// Level out of 5, 20 % a step; no device reports a finer figure. `None` while charging on a
+    /// device that then reports no level at all.
+    pub level: Option<u8>,
     pub charging: bool,
+}
+
+impl Battery {
+    /// Highest level a device reports.
+    pub const MAX_LEVEL: u8 = 5;
+
+    /// The level as a percentage, in 20 % steps.
+    pub fn percent(self) -> Option<u8> {
+        self.level.map(|l| l.min(Battery::MAX_LEVEL) * (100 / Battery::MAX_LEVEL))
+    }
 }
 
 /// State the device reports about itself.
@@ -314,4 +325,16 @@ pub trait LiveInput {
     /// # Errors
     /// [`Error::NoReply`] when the device did not take the command.
     fn rumble(&mut self, motors: [u8; 4]) -> Result<(), Error>;
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn a_level_is_a_fifth_of_the_charge() {
+        let at = |level| Battery { level, charging: false }.percent();
+        assert_eq!((at(Some(5)), at(Some(3)), at(Some(0)), at(None)), (Some(100), Some(60), Some(0), None));
+        assert_eq!(at(Some(9)), Some(100));
+    }
 }

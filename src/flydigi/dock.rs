@@ -45,8 +45,6 @@ const TRIES: usize = 3;
 const NICKNAME_BYTES: usize = PKT - 6;
 /// Battery byte of the status report from which the seated controller counts as charging.
 const CHARGING_LEVEL: u8 = 6;
-/// Battery levels a controller reports, 0..5.
-const MAX_LEVEL: u8 = 5;
 /// Data bytes per lighting pack; every pack waits for its own ack.
 const PACK_BYTES: usize = 50;
 /// First byte of the lighting write's start command, as Space Station sends it.
@@ -139,7 +137,9 @@ fn parse_heartbeat(p: &[u8]) -> Option<Heartbeat> {
 fn parse_status(p: &[u8]) -> Option<Option<Battery>> {
     let b = p.get(..9).filter(|b| b[..3] == [0x5a, 0xa5, cmd::STATUS])?;
     let level = b[8];
-    Some((b[7] != 0).then_some(Battery { level: level.min(MAX_LEVEL), charging: level >= CHARGING_LEVEL }))
+    // a charging controller is reported as 6, with no level beside it
+    let charging = level >= CHARGING_LEVEL;
+    Some((b[7] != 0).then_some(Battery { level: (!charging).then_some(level.min(Battery::MAX_LEVEL)), charging }))
 }
 
 /// The name sits at 6 and runs `len - 4` bytes; a first byte of 0 or ff means none.
@@ -313,7 +313,7 @@ mod tests {
     fn status_tells_an_empty_dock_from_a_charging_controller() {
         assert_eq!(parse_status(&[0x5a, 0xa5, 239, 0, 0, 0, 0, 0, 0]), Some(None));
         let seated = parse_status(&[0x5a, 0xa5, 239, 0, 0, 0, 0, 1, 6]);
-        assert_eq!(seated, Some(Some(Battery { level: 5, charging: true })));
+        assert_eq!(seated, Some(Some(Battery { level: None, charging: true })));
         assert_eq!(parse_status(&[0x5a, 0xa5, 1, 0, 0, 0, 0, 1, 6]), None);
     }
 

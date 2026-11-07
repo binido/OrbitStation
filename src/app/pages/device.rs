@@ -29,12 +29,17 @@ pub fn show(ui: &mut egui::Ui, dev: &mut dyn Device, view: &mut DeviceView) {
             ui.end_row();
             if let Some(b) = info.battery {
                 ui_kit::key(ui, t!("Battery"));
-                ui.label(battery(b));
+                battery(ui, b);
                 ui.end_row();
             }
             if let Some(seated) = info.docked {
                 ui_kit::key(ui, t!("Docked controller"));
-                ui.label(seated.map_or_else(|| t!("none").to_string(), battery));
+                match seated {
+                    Some(b) => battery(ui, b),
+                    None => {
+                        ui.label(t!("none"));
+                    }
+                }
                 ui.end_row();
             }
             ui_kit::key(ui, t!("Firmware"));
@@ -94,8 +99,19 @@ pub fn show(ui: &mut egui::Ui, dev: &mut dyn Device, view: &mut DeviceView) {
     });
 }
 
-fn battery(b: Battery) -> String {
-    if b.charging { t!("Charging").to_string() } else { format!("{} / 5", b.level) }
+/// The charge in percent, with a note that it moves in 20 % steps: that is all a device reports.
+fn battery(ui: &mut egui::Ui, b: Battery) {
+    let text = match (b.percent(), b.charging) {
+        (Some(p), true) => t!("{}%, charging", p),
+        (Some(p), false) => format!("{p}%"),
+        (None, _) => t!("Charging").to_string(),
+    };
+    ui.horizontal(|ui| {
+        ui.label(text);
+        if b.level.is_some() {
+            ui_kit::key(ui, t!("in 20% steps, the controller reports nothing finer"));
+        }
+    });
 }
 
 /// Backs up every slot, then resets them all. Reading a slot switches to it, so the active one comes

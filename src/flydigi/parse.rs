@@ -58,7 +58,7 @@ pub fn info(p: &[u8]) -> Info {
     let bat = d[6];
     Info {
         device_id: d[0],
-        battery: Some(Battery { level: bat & 15, charging: bat >> 4 == 1 }),
+        battery: Some(Battery { level: Some(bat & 15), charging: bat >> 4 == 1 }),
         firmware: version(d[10], d[11]),
         radio: Some(version(d[22], d[23])),
         docked: None,
@@ -152,7 +152,7 @@ mod tests {
     fn heartbeat_of_a_vader_5_pro() {
         let hb = hex("5a a5 01 01 00 82 01 00 00 00 00 13 45 01 00 71 50 00 00 35 18 00 00 00 00 00 00 10 26 1f 00 41");
         let info = info(&hb);
-        assert_eq!((info.device_id, info.battery), (0x82, Some(Battery { level: 3, charging: true })));
+        assert_eq!((info.device_id, info.battery), (0x82, Some(Battery { level: Some(3), charging: true })));
         assert_eq!((info.firmware.as_str(), info.radio.as_deref()), ("7.1.5.0", Some("1.0.2.6")));
     }
 
@@ -161,7 +161,7 @@ mod tests {
         // openflydigi's capture over the dongle, report id 04 stripped: 31 bytes
         let hb = hex("5a a5 01 01 00 80 02 00 00 00 00 05 45 01 00 70 45 21 31 45 25 00 00 01 28 00 00 11 31 1f 00");
         let info = info(&hb);
-        assert_eq!((info.device_id, info.battery), (128, Some(Battery { level: 5, charging: false })));
+        assert_eq!((info.device_id, info.battery), (128, Some(Battery { level: Some(5), charging: false })));
         assert_eq!(info.firmware, "7.0.4.5");
     }
 

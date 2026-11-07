@@ -282,6 +282,8 @@ pub fn ru(s: &str) -> Option<&'static str> {
         "Picture or GIF" => "Картинка или GIF",
         "Could not open the picture: {}" => "Не удалось открыть картинку: {}",
         "Pictures" => "Изображения",
+        "{}%, charging" => "{}%, заряжается",
+        "in 20% steps, the controller reports nothing finer" => "шаг 20%, точнее геймпад не сообщает",
         _ => return None,
     })
 }
